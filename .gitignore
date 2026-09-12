@@ -1,0 +1,9 @@
+# Secrets — never push real config to GitHub
+config.js
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

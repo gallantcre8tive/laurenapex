@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Admin — Lauren Apex Global</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: { 700: '#152a52', 800: '#0f1f3d', 900: '#0a1628' },
+            gold: { 400: '#f0c14b', 500: '#d4a017', 600: '#b8860b' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    #adminLogin.hidden, #adminDashboard.hidden { display: none !important; }
+    #adminDashboard:not(.hidden) { display: block; }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* Sidebar */
+    .sidebar {
+      width: 260px;
+      max-width: 85vw;
+      background: #0a1628;
+      color: #fff;
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 100;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .sidebar.open { transform: translateX(0); }
+    @media (min-width: 768px) {
+      .sidebar { transform: translateX(0); }
+      .admin-wrap { margin-left: 260px; }
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-radius: 0.625rem;
+      color: #94a3b8;
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    .nav-link:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+    .nav-link.active {
+      background: rgba(212,160,23,0.15);
+      color: #f0c14b;
+      box-shadow: inset 3px 0 0 #d4a017;
+    }
+    .nav-link i { width: 1.25rem; text-align: center; flex-shrink: 0; }
+
+    #sidebarOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 90;
+    }
+    #sidebarOverlay.show { display: block; }
+
+    /* Cards & UI */
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.875rem;
+      box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .badge-pending { background: #fef3c7; color: #b45309; }
+    .badge-completed { background: #d1fae5; color: #047857; }
+    .badge-rejected { background: #fee2e2; color: #b91c1c; }
+
+    .input {
+      width: 100%;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.5rem;
+      padding: 0.625rem 0.75rem;
+      font-size: 0.875rem;
+      background: #fff;
+    }
+    .input:focus {
+      outline: none;
+      border-color: #d4a017;
+      box-shadow: 0 0 0 3px rgba(212,160,23,0.15);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.625rem 1rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .btn-dark { background: #0a1628; color: #fff; }
+    .btn-dark:hover { background: #152a52; }
+    .btn-gold { background: #d4a017; color: #0a1628; }
+    .btn-gold:hover { background: #f0c14b; }
+    .btn-ghost { background: #f1f5f9; color: #334155; }
+    .btn-ghost:hover { background: #e2e8f0; }
+    .btn-danger { background: #fff1f2; color: #e11d48; }
+    .btn-danger:hover { background: #ffe4e6; }
+
+    /* Tables: horizontal scroll on small screens */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      min-width: 640px;
+    }
+    table.data th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+      background: #f8fafc;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    table.data td {
+      padding: 0.75rem 1rem;
+      border-top: 1px solid #f1f5f9;
+      vertical-align: middle;
+    }
+    table.data tr:hover td { background: #f8fafc; }
+    table.data .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    /* Market pills */
+    .mkt-row {
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      padding-bottom: 0.25rem;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+    }
+    .mkt-pill {
+      flex: 0 0 auto;
+      min-width: 108px;
+      background: #0f1f3d;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 0.5rem;
+      padding: 0.5rem 0.65rem;
+    }
+    .mkt-pill .sym { font-size: 0.6rem; color: #94a3b8; font-weight: 600; }
+    .mkt-pill .price { font-size: 0.8rem; font-weight: 700; color: #fff; }
+    .mkt-pill .chg { font-size: 0.65rem; font-weight: 600; }
+    .mkt-pill .chg.up { color: #34d399; }
+    .mkt-pill .chg.down { color: #f87171; }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(10,22,40,0.55);
+      padding: 0.75rem;
+      align-items: flex-end;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    @media (min-width: 640px) {
+      .modal { align-items: center; padding: 1rem; }
+    }
+    .modal.show { display: flex; }
+    .modal-panel {
+      background: #fff;
+      width: 100%;
+      max-width: 40rem;
+      max-height: 92vh;
+      overflow-y: auto;
+      border-radius: 1rem 1rem 0 0;
+      padding: 1.25rem;
+      -webkit-overflow-scrolling: touch;
+    }
+    @media (min-width: 640px) {
+      .modal-panel { border-radius: 1rem; padding: 1.5rem; }
+    }
+
+    /* Login */
+    .login-bg {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background:
+        radial-gradient(ellipse at 20% 15%, rgba(212,160,23,0.12), transparent 45%),
+        linear-gradient(160deg, #0a1628, #0f1f3d);
+    }
+    .login-card {
+      width: 100%;
+      max-width: 22rem;
+      background: rgba(15,31,61,0.9);
+      border: 1px solid rgba(212,160,23,0.25);
+      border-radius: 1rem;
+      padding: 1.75rem 1.25rem;
+      backdrop-filter: blur(12px);
+    }
+    .login-card input {
+      width: 100%;
+      background: rgba(10,22,40,0.85);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #fff;
+      border-radius: 0.5rem;
+      padding: 0.75rem 0.875rem;
+      font-size: 0.9375rem;
+    }
+    .login-card input:focus {
+      outline: none;
+      border-color: #d4a017;
+      box-shadow: 0 0 0 3px rgba(212,160,23,0.2);
+    }
+    .login-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #d4a017, #b8860b);
+      color: #0a1628;
+      font-weight: 700;
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.8rem;
+      font-size: 0.9375rem;
+      cursor: pointer;
+    }
+
+    /* Stat grid */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    @media (min-width: 1024px) {
+      .stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+    }
+
+    .admin-main {
+      padding: 0.75rem;
+      max-width: 1400px;
+    }
+    @media (min-width: 640px) {
+      .admin-main { padding: 1.25rem; }
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.875rem;
+      padding: 0.75rem 1rem;
+      margin-bottom: 0.75rem;
+    }
+  
+    .lag-toast-host{position:fixed;inset:0;z-index:9999;pointer-events:none;display:flex;align-items:flex-start;justify-content:center;padding:1rem}
+    .lag-toast{pointer-events:auto;max-width:24rem;width:100%;background:#fff;color:#0a1628;border-radius:1rem;padding:1rem 1.15rem;box-shadow:0 20px 50px rgba(15,23,42,.25);border:1px solid #e2e8f0;display:flex;gap:.75rem;align-items:flex-start;animation:lagIn .28s ease}
+    .lag-toast.ok{border-left:4px solid #10b981}.lag-toast.err{border-left:4px solid #ef4444}.lag-toast.info{border-left:4px solid #d4a017}
+    .lag-toast-icon{font-size:1.15rem;margin-top:.1rem}.lag-toast.ok .lag-toast-icon{color:#10b981}.lag-toast.err .lag-toast-icon{color:#ef4444}.lag-toast.info .lag-toast-icon{color:#d4a017}
+    .lag-toast-body{flex:1;min-width:0}.lag-toast-title{font-weight:700;font-size:.9rem;margin-bottom:.2rem}.lag-toast-msg{font-size:.82rem;line-height:1.45;color:#64748b;white-space:pre-wrap}
+    .lag-toast-close{background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.1rem;padding:.15rem}
+    @keyframes lagIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
+    .lag-modal-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(10,22,40,.55);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:1rem}
+    .lag-modal{background:#fff;width:100%;max-width:22rem;border-radius:1.15rem;padding:1.5rem 1.35rem 1.25rem;box-shadow:0 25px 60px rgba(0,0,0,.3);text-align:center}
+    .lag-modal-icon{width:3rem;height:3rem;border-radius:9999px;display:flex;align-items:center;justify-content:center;margin:0 auto .85rem;font-size:1.25rem}
+    .lag-modal-icon.ok{background:#d1fae5;color:#059669}.lag-modal-icon.err{background:#fee2e2;color:#dc2626}.lag-modal-icon.info{background:#fef3c7;color:#b45309}
+    .lag-modal h3{font-size:1.1rem;font-weight:700;margin-bottom:.4rem}.lag-modal p{font-size:.875rem;color:#64748b;line-height:1.5;white-space:pre-wrap;margin-bottom:1.15rem}
+    .lag-modal-btn{width:100%;padding:.7rem 1rem;border:none;border-radius:.75rem;background:#0a1628;color:#fff;font-weight:600;font-size:.9rem;cursor:pointer}
+
+  </style>
+  <script src="config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script>
+const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? window.APP_CONFIG.firebase : {
+  apiKey: "", authDomain: "", databaseURL: "", projectId: "",
+  storageBucket: "", messagingSenderId: "", appId: "", measurementId: ""
+};
+  </script>
+  <script>
+(function (global) {
+  'use strict';
+  let useFirebase = false, db = null, readyPromise = null;
+  function isConfigReady() {
+    try {
+      // Local-first: Firebase only if explicitly enabled in config.js
+      if (!(window.APP_CONFIG && window.APP_CONFIG.enableFirebase === true)) return false;
+      return typeof firebaseConfig === 'object' &&
+        !!firebaseConfig.apiKey &&
+        firebaseConfig.apiKey.indexOf('YOUR_') !== 0 &&
+        firebaseConfig.apiKey.length > 10 &&
+        !!firebaseConfig.projectId &&
+        String(firebaseConfig.projectId).indexOf('your-') !== 0;
+    } catch (e) { return false; }
+  }
+  function init() {
+    if (readyPromise) return readyPromise;
+    readyPromise = new Promise(function (resolve) {
+      if (isConfigReady() && typeof firebase !== 'undefined') {
+        try {
+          if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+          db = firebase.firestore();
+          useFirebase = true;
+        } catch (e) { useFirebase = false; }
+      } else useFirebase = false;
+      resolve(useFirebase);
+    });
+    return readyPromise;
+  }
+  async function getUsers() {
+    await init();
+    let local = {};
+    try { local = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { local = {}; }
+    if (!useFirebase) return local;
+    try {
+      const snap = await db.collection('users').get();
+      const cloud = {};
+      snap.forEach(doc => { cloud[doc.id] = doc.data(); });
+      // Merge: localStorage wins on conflict so local signups always appear in admin
+      return Object.assign({}, cloud, local);
+    } catch (e) {
+      console.warn('[LAG] getUsers cloud failed, using localStorage', e);
+      return local;
+    }
+  }
+  async function setUser(email, data) {
+    await init();
+    if (useFirebase) { await db.collection('users').doc(email).set(data, { merge: true }); return; }
+    const users = JSON.parse(localStorage.getItem('lag_users') || '{}');
+    users[email] = { ...(users[email] || {}), ...data };
+    localStorage.setItem('lag_users', JSON.stringify(users));
+  }
+  async function deleteUser(email) {
+    await init();
+    if (useFirebase) {
+      await db.collection('users').doc(email).delete();
+      await db.collection('portfolios').doc(email).delete();
+      return;
+    }
+    const users = JSON.parse(localStorage.getItem('lag_users') || '{}');
+    delete users[email];
+    localStorage.setItem('lag_users', JSON.stringify(users));
+    localStorage.removeItem('lag_portfolio_' + email);
+  }
+  function emptyPortfolio() {
+    return { totalAssets: 0, equity: 0, investedCapital: 0, withdrawable: 0, activePositions: 0, holdings: [], transactions: [] };
+  }
+  async function getPortfolio(email) {
+    await init();
+    if (useFirebase) {
+      const doc = await db.collection('portfolios').doc(email).get();
+      if (doc.exists) return { ...emptyPortfolio(), ...doc.data() };
+      const empty = emptyPortfolio();
+      await db.collection('portfolios').doc(email).set(empty);
+      return empty;
+    }
+    const key = 'lag_portfolio_' + email;
+    const raw = localStorage.getItem(key);
+    if (raw) { try { return { ...emptyPortfolio(), ...JSON.parse(raw) }; } catch (e) {} }
+    const empty = emptyPortfolio();
+    localStorage.setItem(key, JSON.stringify(empty));
+    return empty;
+  }
+  async function savePortfolio(email, data) {
+    await init();
+    data.updatedAt = new Date().toISOString();
+    if (useFirebase) { await db.collection('portfolios').doc(email).set(data, { merge: true }); return; }
+    localStorage.setItem('lag_portfolio_' + email, JSON.stringify(data));
+  }
+  async function getAllPortfolios() {
+    await init();
+    const users = await getUsers();
+    const out = {};
+    for (const email of Object.keys(users)) {
+      out[email] = await getPortfolio(email);
+    }
+    if (useFirebase) {
+      try {
+        const snap = await db.collection('portfolios').get();
+        snap.forEach(doc => {
+          if (!out[doc.id]) out[doc.id] = doc.data();
+        });
+      } catch (e) {
+        console.warn('[LAG] getAllPortfolios cloud failed', e);
+      }
+    }
+    return out;
+  }
+  async function getNotifications() {
+    await init();
+    if (useFirebase) {
+      const snap = await db.collection('notifications').orderBy('createdAt', 'desc').limit(100).get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+    return JSON.parse(localStorage.getItem('lag_notifications') || '[]');
+  }
+  async function addNotification(payload) {
+    await init();
+    const item = { ...payload, createdAt: new Date().toISOString(), readBy: payload.readBy || [] };
+    if (useFirebase) {
+      const ref = await db.collection('notifications').add(item);
+      return { id: ref.id, ...item };
+    }
+    const list = JSON.parse(localStorage.getItem('lag_notifications') || '[]');
+    item.id = Date.now();
+    list.unshift(item);
+    localStorage.setItem('lag_notifications', JSON.stringify(list));
+    return item;
+  }
+  global.LAG = {
+    init, isFirebase: function () { return useFirebase; },
+    getUsers, setUser, deleteUser, getPortfolio, savePortfolio, getAllPortfolios,
+    getNotifications, addNotification, emptyPortfolio
+  };
+})(window);
+  </script>
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div id="adminLogin" class="login-bg">
+    <div class="login-card">
+      <div class="text-center mb-6">
+        <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-gold-500/20 flex items-center justify-center">
+          <i class="fas fa-shield-alt text-gold-400 text-xl"></i>
+        </div>
+        <h1 class="text-xl font-bold text-white">Admin Panel</h1>
+        <p class="text-slate-400 text-xs mt-1">Lauren Apex Global</p>
+      </div>
+      <form id="adminLoginForm" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">Admin email</label>
+          <input type="email" id="adminEmailLogin" placeholder="you@gmail.com" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="email" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">Password</label>
+          <div class="relative">
+            <input type="password" id="adminPassword" placeholder="Password" autocomplete="current-password" class="w-full" style="padding-right:2.5rem" />
+            <button type="button" id="btnTogglePass" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm px-2" aria-label="Show password">Show</button>
+          </div>
+        </div>
+        <button type="submit" class="login-btn">Sign In</button>
+        <p class="text-center text-[11px] text-slate-500"><i class="fas fa-lock mr-1"></i>Authorized only</p>
+        <p class="text-center text-[11px]"><a href="#" id="btnClearAdminLock" class="text-slate-400 hover:text-gold-400 underline">Clear saved login</a></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="adminDashboard" class="hidden">
+    <div id="sidebarOverlay"></div>
+
+    <aside id="sidebar" class="sidebar p-4">
+      <div class="flex items-center justify-between mb-6 px-1">
+        <div>
+          <div class="font-bold text-sm tracking-wide">LAUREN APEX</div>
+          <div class="text-gold-400 text-[10px] font-semibold tracking-widest">ADMIN</div>
+        </div>
+        <button type="button" id="btnCloseSidebar" class="md:hidden text-slate-400 text-xl p-1" aria-label="Close menu">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <nav class="space-y-1">
+        <a href="#" class="nav-link active" data-page="overview"><i class="fas fa-th-large"></i> Overview</a>
+        <a href="#" class="nav-link" data-page="users"><i class="fas fa-users"></i> Users</a>
+        <a href="#" class="nav-link" data-page="transactions"><i class="fas fa-exchange-alt"></i> Transactions</a>
+        <a href="#" class="nav-link" data-page="pending"><i class="fas fa-clock"></i> Pending <span id="pendingBadge" class="ml-auto hidden text-[10px] bg-amber-500 text-navy-900 font-bold px-1.5 py-0.5 rounded-full">0</span></a>
+        <a href="#" class="nav-link" data-page="markets"><i class="fas fa-chart-line"></i> Markets</a>
+        <a href="#" class="nav-link" data-page="notifications"><i class="fas fa-bell"></i> Notifications</a>
+        <a href="#" class="nav-link" data-page="settings"><i class="fas fa-cog"></i> Settings</a>
+        <a href="#" id="btnLogout" class="nav-link mt-4 text-red-400 hover:!bg-red-900/20"><i class="fas fa-sign-out-alt"></i> Logout</a>
+      </nav>
+    </aside>
+
+    <div class="admin-wrap">
+      <div class="admin-main">
+        <div class="topbar">
+          <div class="flex items-center gap-2 min-w-0">
+            <button type="button" id="btnOpenSidebar" class="md:hidden shrink-0 p-2 rounded-lg hover:bg-slate-100 text-navy-900" aria-label="Menu">
+              <i class="fas fa-bars text-lg"></i>
+            </button>
+            <div class="min-w-0">
+              <h1 class="text-base sm:text-lg font-bold text-navy-900 truncate" id="pageTitle">Overview</h1>
+              <p class="text-[11px] text-slate-400 hidden sm:block" id="pageSubtitle">Platform control</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button type="button" id="btnRefresh" class="btn btn-ghost text-xs py-2 px-2.5">
+              <i class="fas fa-sync-alt"></i><span class="hidden sm:inline">Refresh</span>
+            </button>
+            <div class="w-8 h-8 sm:w-9 sm:h-9 bg-navy-900 rounded-full flex items-center justify-center text-gold-400 text-xs font-bold">A</div>
+          </div>
+        </div>
+
+        <div class="mkt-row mb-3" id="adminMktStrip">
+          <div class="mkt-pill"><div class="sym">BTC/USDT</div><div class="flex items-baseline gap-1"><span class="price" id="admBTC">—</span><span class="chg up" id="admBTCChg">—</span></div></div>
+          <div class="mkt-pill"><div class="sym">ETH/USDT</div><div class="flex items-baseline gap-1"><span class="price" id="admETH">—</span><span class="chg up" id="admETHChg">—</span></div></div>
+          <div class="mkt-pill"><div class="sym">BNB/USDT</div><div class="flex items-baseline gap-1"><span class="price" id="admBNB">—</span><span class="chg up" id="admBNBChg">—</span></div></div>
+          <div class="mkt-pill"><div class="sym">SOL/USDT</div><div class="flex items-baseline gap-1"><span class="price" id="admSOL">—</span><span class="chg up" id="admSOLChg">—</span></div></div>
+          <div class="mkt-pill"><div class="sym">XRP/USDT</div><div class="flex items-baseline gap-1"><span class="price" id="admXRP">—</span><span class="chg up" id="admXRPChg">—</span></div></div>
+        </div>
+
+        <!-- OVERVIEW -->
+        <div id="page-overview" class="page active">
+          <div class="stat-grid mb-4">
+            <div class="card p-3 sm:p-4">
+              <p class="text-[11px] text-slate-500 font-medium mb-1">Total Users</p>
+              <p class="text-xl sm:text-2xl font-bold text-navy-900" id="statUsers">0</p>
+            </div>
+            <div class="card p-3 sm:p-4">
+              <p class="text-[11px] text-slate-500 font-medium mb-1">Platform Assets</p>
+              <p class="text-xl sm:text-2xl font-bold text-navy-900" id="statTotalAssets">$0</p>
+            </div>
+            <div class="card p-3 sm:p-4">
+              <p class="text-[11px] text-slate-500 font-medium mb-1">Pending Deposits</p>
+              <p class="text-xl sm:text-2xl font-bold text-amber-600" id="statPendingDeposits">0</p>
+            </div>
+            <div class="card p-3 sm:p-4">
+              <p class="text-[11px] text-slate-500 font-medium mb-1">Pending Withdrawals</p>
+              <p class="text-xl sm:text-2xl font-bold text-rose-600" id="statPendingWithdrawals">0</p>
+            </div>
+          </div>
+
+          <div class="grid lg:grid-cols-3 gap-3 sm:gap-4 mb-4">
+            <div class="card p-3 sm:p-4 lg:col-span-2">
+              <h3 class="font-semibold text-sm text-navy-900 mb-2">Assets trend</h3>
+              <div style="height:180px"><canvas id="adminChart"></canvas></div>
+            </div>
+            <div class="card p-3 sm:p-4">
+              <h3 class="font-semibold text-sm text-navy-900 mb-2">Quick actions</h3>
+              <div class="space-y-2">
+                <button type="button" class="goto-btn w-full text-left px-3 py-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 text-sm flex items-center gap-2" data-goto="users"><i class="fas fa-user-edit text-gold-500 w-4"></i> Manage users</button>
+                <button type="button" class="goto-btn w-full text-left px-3 py-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 text-sm flex items-center gap-2" data-goto="pending"><i class="fas fa-check-double text-gold-500 w-4"></i> Review pending</button>
+                <button type="button" class="goto-btn w-full text-left px-3 py-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 text-sm flex items-center gap-2" data-goto="notifications"><i class="fas fa-paper-plane text-gold-500 w-4"></i> Send notification</button>
+                <button type="button" class="goto-btn w-full text-left px-3 py-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 text-sm flex items-center gap-2" data-goto="settings"><i class="fas fa-cog text-gold-500 w-4"></i> Settings</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-3 sm:p-4">
+            <h3 class="font-semibold text-sm text-navy-900 mb-2">Recent activity</h3>
+            <div id="recentActivity" class="text-sm text-slate-500">No recent activity</div>
+          </div>
+        </div>
+
+        <!-- USERS -->
+        <div id="page-users" class="page">
+          <div class="card overflow-hidden">
+            <div class="p-3 sm:p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+              <h2 class="font-semibold text-navy-900 text-sm">Users <span id="userCount" class="text-slate-400 font-normal">0</span></h2>
+              <input type="search" id="userSearch" class="input sm:max-w-xs" placeholder="Search name, email…" />
+            </div>
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Verified</th>
+                    <th>Phone</th>
+                    <th class="num">Assets</th>
+                    <th class="num">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                  <tr><td colspan="6" class="text-center py-8 text-slate-400">No users</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TRANSACTIONS -->
+        <div id="page-transactions" class="page">
+          <div class="card overflow-hidden">
+            <div class="p-3 sm:p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+              <h2 class="font-semibold text-navy-900 text-sm">Transactions</h2>
+              <div class="flex flex-wrap gap-2">
+                <select id="txFilterType" class="input w-auto min-w-[7rem]">
+                  <option value="all">All types</option>
+                  <option value="Deposit">Deposit</option>
+                  <option value="Withdrawal">Withdrawal</option>
+                  <option value="Adjustment">Adjustment</option>
+                </select>
+                <select id="txFilterStatus" class="input w-auto min-w-[7rem]">
+                  <option value="all">All status</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th class="num">Amount</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="adminTransactionsBody">
+                  <tr><td colspan="6" class="text-center py-8 text-slate-400">No transactions</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- PENDING -->
+        <div id="page-pending" class="page">
+          <div class="card overflow-hidden">
+            <div class="p-3 sm:p-4 border-b border-slate-100">
+              <h2 class="font-semibold text-navy-900 text-sm">Pending requests</h2>
+              <p class="text-[11px] text-slate-400 mt-0.5">Approve deposits to credit portfolios.</p>
+            </div>
+            <div class="table-wrap">
+              <table class="data" style="min-width:520px">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th class="num">Amount</th>
+                    <th class="num">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="pendingBody">
+                  <tr><td colspan="5" class="text-center py-8 text-slate-400">No pending</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- MARKETS -->
+        <div id="page-markets" class="page">
+          <div class="card overflow-hidden mb-3">
+            <div class="p-3 sm:p-4 border-b border-slate-100 flex items-center justify-between gap-2">
+              <div>
+                <h2 class="font-semibold text-navy-900 text-sm">Live markets</h2>
+                <p class="text-[11px] text-slate-400">Binance 24h data</p>
+              </div>
+              <span class="text-[11px] text-emerald-600 font-medium flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Live</span>
+            </div>
+            <div class="table-wrap">
+              <table class="data" style="min-width:560px">
+                <thead>
+                  <tr>
+                    <th>Pair</th>
+                    <th class="num">Price</th>
+                    <th class="num">24h %</th>
+                    <th class="num">High</th>
+                    <th class="num">Low</th>
+                    <th class="num">Volume</th>
+                  </tr>
+                </thead>
+                <tbody id="marketsTableBody">
+                  <tr><td colspan="6" class="text-center py-6 text-slate-400">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card overflow-hidden bg-navy-900 border-0">
+            <div class="p-2 sm:p-3">
+              <div id="adminTvChart" style="height:min(380px,50vh);width:100%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NOTIFICATIONS -->
+        <div id="page-notifications" class="page">
+          <div class="grid lg:grid-cols-2 gap-3 sm:gap-4">
+            <div class="card p-3 sm:p-4">
+              <h2 class="font-semibold text-navy-900 text-sm mb-3">Send notification</h2>
+              <form id="notifForm" class="space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Target</label>
+                  <select id="notifTarget" class="input"><option value="all">All users</option></select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Title</label>
+                  <input type="text" id="notifTitle" required class="input" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Message</label>
+                  <textarea id="notifMessage" required rows="3" class="input"></textarea>
+                </div>
+                <button type="submit" class="btn btn-dark w-full sm:w-auto">Send</button>
+              </form>
+            </div>
+            <div class="card p-3 sm:p-4">
+              <h2 class="font-semibold text-navy-900 text-sm mb-3">History</h2>
+              <div id="adminNotifList" class="space-y-2 text-sm max-h-80 overflow-y-auto text-slate-500">None yet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SETTINGS -->
+        <div id="page-settings" class="page">
+          <div class="grid lg:grid-cols-2 gap-3 sm:gap-4">
+            <div class="card p-3 sm:p-4">
+              <h2 class="font-semibold text-navy-900 text-sm mb-1">Admin account</h2>
+              <p class="text-[11px] text-slate-400 mb-3">Change email & password for this domain.</p>
+              <form id="adminAccountForm" class="space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Admin email</label>
+                  <input type="email" id="settingsAdminEmail" class="input" placeholder="you@gmail.com" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Current password</label>
+                  <input type="password" id="settingsCurrentPass" class="input" autocomplete="current-password" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">New password</label>
+                  <input type="password" id="settingsNewPass" class="input" placeholder="Leave blank to keep" autocomplete="new-password" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Confirm new password</label>
+                  <input type="password" id="settingsConfirmPass" class="input" autocomplete="new-password" />
+                </div>
+                <button type="submit" class="btn btn-dark w-full sm:w-auto">Save settings</button>
+                <p id="settingsAccountMsg" class="text-sm hidden"></p>
+              </form>
+            </div>
+            <div class="card p-3 sm:p-4">
+              <h2 class="font-semibold text-navy-900 text-sm mb-2">Current identity</h2>
+              <p class="text-sm text-navy-900 break-all" id="settingsCurrentEmailDisplay">—</p>
+              <p class="text-[11px] text-slate-400 mt-1 mb-4">Password is never shown here.</p>
+              <button type="button" id="btnResetAdminDefault" class="btn btn-danger text-xs">Reset to config.js defaults</button>
+              <p class="text-[11px] text-slate-400 mt-3 leading-relaxed">After hosting, set email/password here once. Values are stored for this domain in the browser.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER MODAL -->
+  <div id="userModal" class="modal">
+    <div class="modal-panel">
+      <div class="flex justify-between items-start gap-2 mb-4">
+        <div class="min-w-0">
+          <h3 class="text-base font-bold text-navy-900">Manage portfolio</h3>
+          <p class="text-xs text-slate-500 break-all" id="modalUserEmail"></p>
+          <p class="text-[11px] text-slate-400 mt-0.5" id="modalUserMeta"></p>
+        </div>
+        <button type="button" id="btnCloseModal" class="text-slate-400 text-2xl leading-none p-1 shrink-0">&times;</button>
+      </div>
+      <form id="userForm" class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Total Assets ($)</label>
+            <input type="number" id="modalTotalAssets" step="0.01" class="input" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Equity ($)</label>
+            <input type="number" id="modalEquity" step="0.01" class="input" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Invested Capital ($)</label>
+            <input type="number" id="modalInvested" step="0.01" class="input" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Withdrawable ($)</label>
+            <input type="number" id="modalWithdrawable" step="0.01" class="input" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Active Positions ($)</label>
+            <input type="number" id="modalActivePos" step="0.01" class="input" />
+          </div>
+        </div>
+        <div class="border-t border-slate-100 pt-3">
+          <p class="text-xs font-semibold text-navy-900 mb-2">Quick P&amp;L adjustment</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input type="number" id="modalAdjAmount" step="0.01" placeholder="+5000 or -2000" class="input" />
+            <input type="text" id="modalAdjDesc" placeholder="Description" class="input" />
+          </div>
+        </div>
+        <div class="border-t border-slate-100 pt-3">
+          <div class="flex justify-between items-center mb-1">
+            <p class="text-xs font-semibold text-navy-900">Holdings (JSON)</p>
+            <button type="button" id="btnSampleHoldings" class="text-[11px] text-gold-600">Sample</button>
+          </div>
+          <textarea id="modalHoldings" rows="3" class="input font-mono text-xs"></textarea>
+        </div>
+        <div class="border-t border-slate-100 pt-3">
+          <p class="text-xs font-semibold text-navy-900 mb-1">Transactions (JSON)</p>
+          <textarea id="modalTransactions" rows="3" class="input font-mono text-xs"></textarea>
+        </div>
+        <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+          <button type="submit" class="btn btn-dark">Save</button>
+          <button type="button" id="btnCancelModal" class="btn btn-ghost">Cancel</button>
+          <button type="button" id="btnDeleteUser" class="btn btn-danger ml-auto">Delete user</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <script>
+(function () {
+  const DEFAULT_ADMIN_PASSWORD = (window.APP_CONFIG && window.APP_CONFIG.defaultAdminPassword)
+    ? window.APP_CONFIG.defaultAdminPassword
+    : 'changeme';
+  const ADMIN_CFG_KEY = 'lag_admin_config';
+  let currentModalUser = '';
+  let adminChart = null;
+  let adminTv = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  function getAdminConfig() {
+    const fromFile = {
+      email: (window.APP_CONFIG && window.APP_CONFIG.defaultAdminEmail || '').trim(),
+      password: DEFAULT_ADMIN_PASSWORD
+    };
+    try {
+      const raw = localStorage.getItem(ADMIN_CFG_KEY);
+      if (raw) {
+        const cfg = JSON.parse(raw);
+        return {
+          email: (cfg.email || fromFile.email || '').trim(),
+          password: (cfg.password && String(cfg.password).length) ? cfg.password : fromFile.password
+        };
+      }
+    } catch (e) {}
+    return { email: fromFile.email, password: fromFile.password };
+  }
+
+  function saveAdminConfig(cfg) {
+    localStorage.setItem(ADMIN_CFG_KEY, JSON.stringify({
+      email: (cfg.email || '').trim(),
+      password: cfg.password || DEFAULT_ADMIN_PASSWORD,
+      updatedAt: new Date().toISOString()
+    }));
+  }
+
+  function preloadLoginEmail() {
+    const cfg = getAdminConfig();
+    const el = $('adminEmailLogin');
+    if (el && cfg.email) el.value = cfg.email;
+  }
+  preloadLoginEmail();
+
+  if (!window.APP_CONFIG) {
+    var form = $('adminLoginForm');
+    if (form) {
+      var n = document.createElement('p');
+      n.className = 'text-center text-[11px] text-rose-400 mt-2';
+      n.textContent = 'config.js not loaded — upload config.js with the site';
+      form.appendChild(n);
+    }
+  }
+
+  $('adminLoginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const cfg = getAdminConfig();
+    const emailRaw = ($('adminEmailLogin') && $('adminEmailLogin').value || '');
+    const email = emailRaw.trim().toLowerCase();
+    const pass = ($('adminPassword').value || '').trim();
+
+    if (!pass) {
+      lagNotify('Enter your password', 'info');
+      return;
+    }
+
+    // Password must match (config.js or Settings-saved)
+    if (pass !== String(cfg.password)) {
+      lagNotify('Wrong password. Tip: use “Clear saved login”, then the password from config.js', 'info');
+      return;
+    }
+
+    // Email: if one is already locked in, require match when user typed an email
+    if (cfg.email) {
+      if (email && email !== cfg.email.toLowerCase()) {
+        lagNotify('Wrong email. Expected the admin email you saved, or leave email empty and clear saved login.', 'info');
+        return;
+      }
+      // allow empty email on phone if password is correct (still logs in)
+    }
+
+    if (email) saveAdminConfig({ email: email, password: cfg.password });
+    else if (cfg.email) saveAdminConfig({ email: cfg.email, password: cfg.password });
+
+    $('adminLogin').classList.add('hidden');
+    $('adminDashboard').classList.remove('hidden');
+    $('adminPassword').value = '';
+    const boot = function () {
+      loadDashboard();
+      refreshAdminMarkets();
+      setInterval(refreshAdminMarkets, 12000);
+    };
+    if (window.LAG && LAG.init) LAG.init().then(boot).catch(boot);
+    else boot();
+  });
+
+  $('btnClearAdminLock').addEventListener('click', function (e) {
+    e.preventDefault();
+    localStorage.removeItem(ADMIN_CFG_KEY);
+    lagNotify('Saved login cleared. Use password from config.js.', 'info');
+    location.reload();
+  });
+
+  $('btnLogout').addEventListener('click', function (e) {
+    e.preventDefault();
+    $('adminLogin').classList.remove('hidden');
+    $('adminDashboard').classList.add('hidden');
+    closeSidebar();
+  });
+
+  function openSidebar() {
+    $('sidebar').classList.add('open');
+    $('sidebarOverlay').classList.add('show');
+  }
+  function closeSidebar() {
+    $('sidebar').classList.remove('open');
+    $('sidebarOverlay').classList.remove('show');
+  }
+  $('btnOpenSidebar').addEventListener('click', openSidebar);
+  $('btnCloseSidebar').addEventListener('click', closeSidebar);
+  $('sidebarOverlay').addEventListener('click', closeSidebar);
+
+  document.querySelectorAll('.nav-link[data-page]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      showPage(a.getAttribute('data-page'));
+      closeSidebar();
+    });
+  });
+  document.querySelectorAll('.goto-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { showPage(btn.getAttribute('data-goto')); });
+  });
+  $('btnRefresh').addEventListener('click', function () {
+    loadDashboard();
+    refreshAdminMarkets();
+  });
+
+  const titles = {
+    overview: ['Overview', 'Platform control'],
+    users: ['Users', 'Accounts & portfolios'],
+    transactions: ['Transactions', 'Full history'],
+    pending: ['Pending', 'Approve or reject'],
+    markets: ['Markets', 'Live prices'],
+    notifications: ['Notifications', 'Message clients'],
+    settings: ['Settings', 'Admin email & password']
+  };
+
+  function showPage(page) {
+    document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
+    var el = $('page-' + page);
+    if (el) el.classList.add('active');
+    document.querySelectorAll('.nav-link[data-page]').forEach(function (a) {
+      a.classList.toggle('active', a.getAttribute('data-page') === page);
+    });
+    var t = titles[page] || [page, ''];
+    $('pageTitle').textContent = t[0];
+    if ($('pageSubtitle')) $('pageSubtitle').textContent = t[1];
+    if (page === 'overview') updateOverview();
+    if (page === 'users') renderUsers();
+    if (page === 'transactions') renderTransactions();
+    if (page === 'pending') renderPending();
+    if (page === 'notifications') { fillTargets(); renderNotifs(); }
+    if (page === 'markets') { refreshAdminMarkets(); setTimeout(initAdminTv, 200); }
+    if (page === 'settings') loadSettingsPage();
+  }
+
+  async function loadDashboard() {
+    await updateOverview();
+    await renderUsers();
+    await renderPending();
+  }
+
+  async function updateOverview() {
+    try {
+      const users = await LAG.getUsers();
+      const portfolios = await LAG.getAllPortfolios();
+      let total = 0, pendD = 0, pendW = 0;
+      const activity = [];
+      Object.keys(portfolios).forEach(function (email) {
+        const d = portfolios[email] || {};
+        total += Number(d.totalAssets) || 0;
+        (d.transactions || []).forEach(function (tx) {
+          if (tx.status === 'Pending') {
+            if (tx.type === 'Deposit') pendD++;
+            if (tx.type === 'Withdrawal') pendW++;
+          }
+          activity.push({ email: email, tx: tx });
+        });
+      });
+      $('statUsers').textContent = Object.keys(users).length;
+      $('statTotalAssets').textContent = '$' + total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      $('statPendingDeposits').textContent = pendD;
+      $('statPendingWithdrawals').textContent = pendW;
+      const badge = $('pendingBadge');
+      const pendTotal = pendD + pendW;
+      if (badge) {
+        if (pendTotal > 0) { badge.textContent = pendTotal; badge.classList.remove('hidden'); }
+        else badge.classList.add('hidden');
+      }
+      activity.sort(function (a, b) { return (a.tx.date < b.tx.date ? 1 : -1); });
+      const box = $('recentActivity');
+      if (!activity.length) box.innerHTML = '<p class="text-slate-400">No recent activity</p>';
+      else {
+        box.innerHTML = activity.slice(0, 8).map(function (r) {
+          const u = users[r.email] || {};
+          const name = ((u.first || '') + ' ' + (u.last || '')).trim() || r.email;
+          const amt = Number(r.tx.amount) || 0;
+          const st = r.tx.status || '';
+          const stClass = st === 'Completed' ? 'badge-completed' : st === 'Pending' ? 'badge-pending' : 'badge-rejected';
+          return '<div class="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-slate-50 last:border-0">' +
+            '<div class="min-w-0"><span class="font-medium text-slate-700 text-sm">' + name + '</span> <span class="text-slate-400">·</span> <span class="text-slate-500 text-sm">' + (r.tx.type || '') + '</span>' +
+            '<p class="text-[11px] text-slate-400 truncate">' + (r.tx.desc || '') + ' · ' + (r.tx.date || '') + '</p></div>' +
+            '<div class="text-right shrink-0"><span class="font-semibold text-sm ' + (amt >= 0 ? 'text-emerald-600' : 'text-rose-600') + '">' + (amt >= 0 ? '+' : '') + '$' + amt.toFixed(2) + '</span> <span class="badge ' + stClass + ' ml-1">' + st + '</span></div></div>';
+        }).join('');
+      }
+      initAdminChart(total);
+    } catch (err) { console.error(err); }
+  }
+
+  function initAdminChart(total) {
+    const ctx = $('adminChart');
+    if (!ctx) return;
+    const base = total || 100000;
+    const pts = [];
+    let v = base * 0.85;
+    for (let i = 0; i < 12; i++) { v += (Math.random() - 0.35) * base * 0.02; pts.push(Math.max(0, v)); }
+    pts[pts.length - 1] = base;
+    if (adminChart) adminChart.destroy();
+    adminChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: pts.map(function (_, i) { return 'W' + (i + 1); }),
+        datasets: [{ data: pts, borderColor: '#0a1628', backgroundColor: 'rgba(10,22,40,0.06)', fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+          y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, callback: function (v) { return '$' + (v / 1000).toFixed(0) + 'k'; } } }
+        }
+      }
+    });
+  }
+
+  async function renderUsers() {
+    try {
+      const users = await LAG.getUsers();
+      const q = ($('userSearch') && $('userSearch').value || '').toLowerCase().trim();
+      let emails = Object.keys(users);
+      if (q) {
+        emails = emails.filter(function (email) {
+          const u = users[email] || {};
+          return (email + ' ' + (u.first || '') + ' ' + (u.last || '') + ' ' + (u.phone || '')).toLowerCase().indexOf(q) !== -1;
+        });
+      }
+      $('userCount').textContent = emails.length;
+      const tbody = $('usersTableBody');
+      if (!emails.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400">No users yet. Sign up on the main site using this same address (127.0.0.1:5500), then click Refresh.</td></tr>';
+        return;
+      }
+      let html = '';
+      for (let i = 0; i < emails.length; i++) {
+        const email = emails[i];
+        const user = users[email] || {};
+        const data = await LAG.getPortfolio(email);
+        const name = ((user.first || '') + ' ' + (user.last || '')).trim() || '—';
+        const verified = !!user.emailVerified;
+        const vBadge = verified
+          ? '<span class="badge badge-completed">Yes</span>'
+          : '<span class="badge badge-pending">No</span> <button type="button" data-email="' + email + '" class="btn-verify text-[10px] text-gold-600 font-semibold ml-1">Mark</button>';
+        html += '<tr>' +
+          '<td class="font-medium text-navy-900">' + name + '</td>' +
+          '<td class="text-xs text-slate-600 break-all">' + email + '</td>' +
+          '<td class="text-xs">' + vBadge + '</td>' +
+          '<td class="text-xs">' + (user.phone || '—') + '</td>' +
+          '<td class="num font-semibold">$' + (Number(data.totalAssets) || 0).toFixed(2) + '</td>' +
+          '<td class="num"><button type="button" data-email="' + email + '" class="btn-edit text-gold-600 font-semibold text-xs">Edit</button></td></tr>';
+      }
+      tbody.innerHTML = html;
+      tbody.querySelectorAll('.btn-edit').forEach(function (btn) {
+        btn.addEventListener('click', function () { openModal(btn.getAttribute('data-email')); });
+      });
+      tbody.querySelectorAll('.btn-verify').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          const email = btn.getAttribute('data-email');
+          const users = await LAG.getUsers();
+          const u = users[email] || {};
+          u.emailVerified = true;
+          delete u.verifyCode;
+          await LAG.setUser(email, u);
+          await renderUsers();
+        });
+      });
+    } catch (err) { console.error(err); }
+  }
+  if ($('userSearch')) $('userSearch').addEventListener('input', renderUsers);
+
+  async function openModal(email) {
+    currentModalUser = email;
+    $('modalUserEmail').textContent = email;
+    const users = await LAG.getUsers();
+    const u = users[email] || {};
+    $('modalUserMeta').textContent = [u.phone, u.country].filter(Boolean).join(' · ');
+    const data = await LAG.getPortfolio(email);
+    $('modalTotalAssets').value = data.totalAssets || 0;
+    $('modalEquity').value = data.equity != null ? data.equity : (data.totalAssets || 0);
+    $('modalInvested').value = data.investedCapital || 0;
+    $('modalWithdrawable').value = data.withdrawable != null ? data.withdrawable : 0;
+    $('modalActivePos').value = data.activePositions != null ? data.activePositions : 0;
+    $('modalAdjAmount').value = '';
+    $('modalAdjDesc').value = '';
+    $('modalHoldings').value = data.holdings && data.holdings.length ? JSON.stringify(data.holdings, null, 2) : '';
+    $('modalTransactions').value = data.transactions && data.transactions.length ? JSON.stringify(data.transactions, null, 2) : '[]';
+    $('userModal').classList.add('show');
+  }
+  function closeModal() {
+    $('userModal').classList.remove('show');
+    currentModalUser = '';
+  }
+  $('btnCloseModal').addEventListener('click', closeModal);
+  $('btnCancelModal').addEventListener('click', closeModal);
+
+  $('btnSampleHoldings').addEventListener('click', function () {
+    $('modalHoldings').value = JSON.stringify([
+      { asset: 'Bitcoin', symbol: 'BTC', type: 'Crypto', quantity: 0.25, value: 23500 },
+      { asset: 'Ethereum', symbol: 'ETH', type: 'Crypto', quantity: 4, value: 13600 }
+    ], null, 2);
+  });
+
+  $('userForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const email = currentModalUser;
+    if (!email) return;
+    const data = await LAG.getPortfolio(email);
+    const totalAssets = parseFloat($('modalTotalAssets').value);
+    const equity = parseFloat($('modalEquity').value);
+    const invested = parseFloat($('modalInvested').value);
+    const withdrawable = parseFloat($('modalWithdrawable').value);
+    const activePos = parseFloat($('modalActivePos').value);
+    const welcomeBonus = parseFloat(($('modalWelcomeBonus') || {}).value);
+    if (!isNaN(totalAssets)) data.totalAssets = totalAssets;
+    if (!isNaN(equity)) data.equity = equity;
+    if (!isNaN(invested)) data.investedCapital = invested;
+    if (!isNaN(withdrawable)) data.withdrawable = withdrawable;
+    if (!isNaN(activePos)) data.activePositions = activePos;
+    if (!isNaN(welcomeBonus)) {
+      data.welcomeBonus = welcomeBonus;
+      data.welcomeBonusDate = welcomeBonus > 0 ? new Date().toLocaleDateString() : '';
+    }
+    try {
+      const hRaw = ($('modalHoldings').value || '').trim();
+      data.holdings = hRaw ? JSON.parse(hRaw) : [];
+      if (!Array.isArray(data.holdings)) data.holdings = [];
+    } catch (err) { lagNotify('Holdings JSON invalid', 'info'); return; }
+    try {
+      const tRaw = ($('modalTransactions').value || '').trim();
+      data.transactions = tRaw ? JSON.parse(tRaw) : [];
+      if (!Array.isArray(data.transactions)) data.transactions = [];
+    } catch (err) { lagNotify('Transactions JSON invalid', 'info'); return; }
+    const adjAmount = parseFloat($('modalAdjAmount').value);
+    const adjDesc = ($('modalAdjDesc').value || '').trim();
+    if (!isNaN(adjAmount) && adjDesc) {
+      data.transactions = data.transactions || [];
+      data.transactions.push({
+        date: new Date().toISOString().slice(0, 10),
+        type: 'Adjustment', desc: adjDesc, amount: adjAmount, status: 'Completed'
+      });
+      data.totalAssets = (data.totalAssets || 0) + adjAmount;
+      data.equity = (data.equity != null ? data.equity : data.totalAssets) + adjAmount;
+    }
+    await LAG.savePortfolio(email, data);
+    closeModal();
+    await loadDashboard();
+    lagNotify('Saved.', 'info');
+  });
+
+  $('btnDeleteUser').addEventListener('click', async function () {
+    const email = currentModalUser;
+    if (!email || !confirm('Delete user ' + email + '?')) return;
+    await LAG.deleteUser(email);
+    closeModal();
+    await loadDashboard();
+  });
+
+  async function renderTransactions() {
+    const users = await LAG.getUsers();
+    const portfolios = await LAG.getAllPortfolios();
+    const typeF = ($('txFilterType') && $('txFilterType').value) || 'all';
+    const statusF = ($('txFilterStatus') && $('txFilterStatus').value) || 'all';
+    const rows = [];
+    Object.keys(portfolios).forEach(function (email) {
+      (portfolios[email].transactions || []).forEach(function (tx) {
+        if (typeF !== 'all' && tx.type !== typeF) return;
+        if (statusF !== 'all' && tx.status !== statusF) return;
+        rows.push({ email: email, user: users[email] || {}, tx: tx });
+      });
+    });
+    rows.sort(function (a, b) { return (a.tx.date < b.tx.date ? 1 : -1); });
+    const tbody = $('adminTransactionsBody');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400">No transactions</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function (r) {
+      const name = ((r.user.first || '') + ' ' + (r.user.last || '')).trim() || r.email;
+      const amt = Number(r.tx.amount) || 0;
+      const st = r.tx.status || '';
+      const stClass = st === 'Completed' ? 'badge-completed' : st === 'Pending' ? 'badge-pending' : 'badge-rejected';
+      return '<tr><td class="text-xs font-medium">' + name + '</td><td class="text-xs">' + (r.tx.date || '') + '</td><td>' + (r.tx.type || '') + '</td><td class="text-slate-600">' + (r.tx.desc || '') + '</td><td class="num font-semibold ' + (amt >= 0 ? 'text-emerald-600' : 'text-rose-600') + '">' + (amt >= 0 ? '+' : '') + '$' + amt.toFixed(2) + '</td><td><span class="badge ' + stClass + '">' + st + '</span></td></tr>';
+    }).join('');
+  }
+  if ($('txFilterType')) $('txFilterType').addEventListener('change', renderTransactions);
+  if ($('txFilterStatus')) $('txFilterStatus').addEventListener('change', renderTransactions);
+
+  async function renderPending() {
+    const users = await LAG.getUsers();
+    const portfolios = await LAG.getAllPortfolios();
+    const rows = [];
+    Object.keys(portfolios).forEach(function (email) {
+      (portfolios[email].transactions || []).forEach(function (tx, idx) {
+        if (tx.status === 'Pending') rows.push({ email: email, idx: idx, user: users[email] || {}, tx: tx });
+      });
+    });
+    const tbody = $('pendingBody');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-400">No pending</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function (r) {
+      const name = ((r.user.first || '') + ' ' + (r.user.last || '')).trim() || r.email;
+      return '<tr><td class="text-xs font-medium">' + name + '<div class="text-[10px] text-slate-400 break-all">' + r.email + '</div></td><td><span class="badge badge-pending">' + r.tx.type + '</span></td><td class="text-slate-600">' + (r.tx.desc || '') + '</td><td class="num font-semibold">$' + (Number(r.tx.amount) || 0).toFixed(2) + '</td><td class="num whitespace-nowrap"><button type="button" class="btn-approve text-emerald-600 text-xs font-bold mr-2" data-email="' + r.email + '" data-idx="' + r.idx + '">Approve</button><button type="button" class="btn-reject text-rose-600 text-xs font-bold" data-email="' + r.email + '" data-idx="' + r.idx + '">Reject</button></td></tr>';
+    }).join('');
+    tbody.querySelectorAll('.btn-approve').forEach(function (b) {
+      b.addEventListener('click', function () { setPendingStatus(b.getAttribute('data-email'), +b.getAttribute('data-idx'), 'Completed'); });
+    });
+    tbody.querySelectorAll('.btn-reject').forEach(function (b) {
+      b.addEventListener('click', function () { setPendingStatus(b.getAttribute('data-email'), +b.getAttribute('data-idx'), 'Rejected'); });
+    });
+  }
+
+  async function setPendingStatus(email, idx, status) {
+    const data = await LAG.getPortfolio(email);
+    if (!data.transactions || !data.transactions[idx]) return;
+    data.transactions[idx].status = status;
+    if (status === 'Completed' && data.transactions[idx].type === 'Deposit') {
+      const amt = Number(data.transactions[idx].amount) || 0;
+      data.totalAssets = (data.totalAssets || 0) + amt;
+      data.investedCapital = (data.investedCapital || 0) + amt;
+      data.equity = (data.equity != null ? data.equity : 0) + amt;
+    }
+    await LAG.savePortfolio(email, data);
+    await renderPending();
+    await updateOverview();
+  }
+
+  async function fillTargets() {
+    const users = await LAG.getUsers();
+    let html = '<option value="all">All users</option>';
+    Object.keys(users).forEach(function (email) {
+      const u = users[email];
+      html += '<option value="' + email + '">' + (u.first || email) + '</option>';
+    });
+    $('notifTarget').innerHTML = html;
+  }
+  async function renderNotifs() {
+    const list = await LAG.getNotifications();
+    const box = $('adminNotifList');
+    if (!list.length) { box.innerHTML = '<p class="text-slate-400">None yet</p>'; return; }
+    box.innerHTML = list.slice(0, 40).map(function (n) {
+      return '<div class="border border-slate-100 rounded-lg p-2.5"><div class="font-medium text-navy-900 text-sm">' + (n.title || '') + '</div><p class="text-xs text-slate-600 mt-1">' + (n.message || '') + '</p><p class="text-[10px] text-slate-400 mt-1">To: ' + (n.target === 'all' ? 'All' : n.target) + '</p></div>';
+    }).join('');
+  }
+  $('notifForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    await LAG.addNotification({
+      target: $('notifTarget').value,
+      title: $('notifTitle').value.trim(),
+      message: $('notifMessage').value.trim()
+    });
+    $('notifTitle').value = '';
+    $('notifMessage').value = '';
+    await renderNotifs();
+    lagNotify('Sent', 'info');
+  });
+
+  function loadSettingsPage() {
+    const cfg = getAdminConfig();
+    if ($('settingsAdminEmail')) $('settingsAdminEmail').value = cfg.email || '';
+    if ($('settingsCurrentPass')) $('settingsCurrentPass').value = '';
+    if ($('settingsNewPass')) $('settingsNewPass').value = '';
+    if ($('settingsConfirmPass')) $('settingsConfirmPass').value = '';
+    if ($('settingsCurrentEmailDisplay')) {
+      $('settingsCurrentEmailDisplay').textContent = cfg.email || 'Not set — save an email below';
+    }
+    const msg = $('settingsAccountMsg');
+    if (msg) { msg.classList.add('hidden'); msg.textContent = ''; }
+  }
+
+  $('adminAccountForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const cfg = getAdminConfig();
+    const current = ($('settingsCurrentPass').value || '').trim();
+    const email = ($('settingsAdminEmail').value || '').trim();
+    const next = ($('settingsNewPass').value || '').trim();
+    const confirm = ($('settingsConfirmPass').value || '').trim();
+    const msg = $('settingsAccountMsg');
+    if (current !== String(cfg.password)) {
+      msg.textContent = 'Current password is incorrect.';
+      msg.className = 'text-sm text-rose-600';
+      msg.classList.remove('hidden');
+      return;
+    }
+    if (next) {
+      if (next.length < 6) {
+        msg.textContent = 'New password must be at least 6 characters.';
+        msg.className = 'text-sm text-rose-600';
+        msg.classList.remove('hidden');
+        return;
+      }
+      if (next !== confirm) {
+        msg.textContent = 'Passwords do not match.';
+        msg.className = 'text-sm text-rose-600';
+        msg.classList.remove('hidden');
+        return;
+      }
+    }
+    saveAdminConfig({ email: email, password: next || cfg.password });
+    if ($('adminEmailLogin') && email) $('adminEmailLogin').value = email;
+    loadSettingsPage();
+    msg.textContent = 'Saved. Use these credentials next login.';
+    msg.className = 'text-sm text-emerald-600';
+    msg.classList.remove('hidden');
+  });
+
+  $('btnResetAdminDefault').addEventListener('click', function () {
+    if (!confirm('Clear saved login and use config.js defaults?')) return;
+    localStorage.removeItem(ADMIN_CFG_KEY);
+    loadSettingsPage();
+    if ($('adminEmailLogin')) $('adminEmailLogin').value = (window.APP_CONFIG && window.APP_CONFIG.defaultAdminEmail) || '';
+    lagNotify('Reset done.', 'info');
+  });
+
+  function setChg(el, pct) {
+    if (!el) return;
+    const n = Number(pct) || 0;
+    el.textContent = (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+    el.classList.remove('up', 'down');
+    el.classList.add(n >= 0 ? 'up' : 'down');
+  }
+  function fmtPrice(price) {
+    price = Number(price);
+    if (!isFinite(price)) return '—';
+    if (price >= 1000) return '$' + price.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    if (price >= 1) return '$' + price.toFixed(2);
+    return '$' + price.toFixed(4);
+  }
+
+  async function refreshAdminMarkets() {
+    const pairs = [
+      { sym: 'BTCUSDT', label: 'BTC/USDT', p: 'admBTC', c: 'admBTCChg' },
+      { sym: 'ETHUSDT', label: 'ETH/USDT', p: 'admETH', c: 'admETHChg' },
+      { sym: 'BNBUSDT', label: 'BNB/USDT', p: 'admBNB', c: 'admBNBChg' },
+      { sym: 'SOLUSDT', label: 'SOL/USDT', p: 'admSOL', c: 'admSOLChg' },
+      { sym: 'XRPUSDT', label: 'XRP/USDT', p: 'admXRP', c: 'admXRPChg' }
+    ];
+    try {
+      let data;
+      try {
+        const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=' + encodeURIComponent(JSON.stringify(pairs.map(function (p) { return p.sym; }))));
+        if (!r.ok) throw new Error('batch');
+        data = await r.json();
+      } catch (e) {
+        data = [];
+        for (let i = 0; i < pairs.length; i++) {
+          try {
+            const r = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=' + pairs[i].sym);
+            if (r.ok) data.push(await r.json());
+          } catch (e2) {}
+        }
+      }
+      const map = {};
+      (Array.isArray(data) ? data : [data]).forEach(function (d) { if (d && d.symbol) map[d.symbol] = d; });
+      pairs.forEach(function (p) {
+        const d = map[p.sym];
+        if (!d) return;
+        if ($(p.p)) $(p.p).textContent = fmtPrice(d.lastPrice);
+        setChg($(p.c), d.priceChangePercent);
+      });
+      const tbody = $('marketsTableBody');
+      if (tbody) {
+        tbody.innerHTML = pairs.map(function (p) {
+          const d = map[p.sym];
+          if (!d) return '<tr><td colspan="6">' + p.label + '</td></tr>';
+          const pct = Number(d.priceChangePercent) || 0;
+          return '<tr><td class="font-semibold">' + p.label + '</td><td class="num">' + fmtPrice(d.lastPrice) + '</td><td class="num font-semibold ' + (pct >= 0 ? 'text-emerald-600' : 'text-rose-600') + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</td><td class="num text-slate-500">' + fmtPrice(d.highPrice) + '</td><td class="num text-slate-500">' + fmtPrice(d.lowPrice) + '</td><td class="num text-xs text-slate-500">' + Number(d.volume).toLocaleString(undefined, { maximumFractionDigits: 0 }) + '</td></tr>';
+        }).join('');
+      }
+    } catch (e) { console.warn(e); }
+  }
+
+  function initAdminTv() {
+    if (typeof TradingView === 'undefined' || !$('adminTvChart') || adminTv) return;
+    $('adminTvChart').innerHTML = '';
+    adminTv = new TradingView.widget({
+      autosize: true, symbol: 'BINANCE:BTCUSDT', interval: '60', timezone: 'Etc/UTC',
+      theme: 'dark', style: '1', locale: 'en', toolbar_bg: '#0a1628',
+      enable_publishing: false, container_id: 'adminTvChart', backgroundColor: '#0a1628'
+    });
+  }
+})();
+  </script>
+<div id="lagToastHost" class="lag-toast-host"></div><div id="lagModalHost"></div>
+<script>
+function lagNotify(message, type, title) {
+  type = type || 'info';
+  title = title || (type === 'ok' ? 'Success' : type === 'err' ? 'Notice' : 'Admin');
+  var host = document.getElementById('lagToastHost');
+  if (!host) return;
+  var icons = { ok: 'fa-check-circle', err: 'fa-exclamation-circle', info: 'fa-info-circle' };
+  var el = document.createElement('div');
+  el.className = 'lag-toast ' + type;
+  el.innerHTML = '<i class="fas ' + (icons[type]||icons.info) + ' lag-toast-icon"></i><div class="lag-toast-body"><div class="lag-toast-title"></div><div class="lag-toast-msg"></div></div><button type="button" class="lag-toast-close">&times;</button>';
+  el.querySelector('.lag-toast-title').textContent = title;
+  el.querySelector('.lag-toast-msg').textContent = message;
+  el.querySelector('.lag-toast-close').onclick = function(){ if(el.parentNode) el.parentNode.removeChild(el); };
+  host.appendChild(el);
+  setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 5000);
+}
+function lagAlert(message, type, title) {
+  type = type || 'info';
+  title = title || 'Admin';
+  return new Promise(function(resolve) {
+    var host = document.getElementById('lagModalHost');
+    if (!host) { lagNotify(message, type, title); resolve(); return; }
+    var icons = { ok: 'fa-check', err: 'fa-exclamation', info: 'fa-info' };
+    var backdrop = document.createElement('div');
+    backdrop.className = 'lag-modal-backdrop';
+    backdrop.innerHTML = '<div class="lag-modal"><div class="lag-modal-icon ' + type + '"><i class="fas ' + (icons[type]||icons.info) + '"></i></div><h3></h3><p></p><button type="button" class="lag-modal-btn">OK</button></div>';
+    backdrop.querySelector('h3').textContent = title;
+    backdrop.querySelector('p').textContent = message;
+    function done(){ if(backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); resolve(); }
+    backdrop.querySelector('.lag-modal-btn').onclick = done;
+    host.appendChild(backdrop);
+  });
+}
+</script>
+</body>
+</html>
