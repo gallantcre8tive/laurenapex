@@ -315,6 +315,7 @@
     .lag-modal-btn{width:100%;padding:.7rem 1rem;border:none;border-radius:.75rem;background:#0a1628;color:#fff;font-weight:600;font-size:.9rem;cursor:pointer}
 
   </style>
+  <script src="site-config.js"></script>
   <script src="config.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -1196,6 +1197,13 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     if (!isNaN(invested)) data.investedCapital = invested;
     if (!isNaN(withdrawable)) data.withdrawable = withdrawable;
     if (!isNaN(activePos)) data.activePositions = activePos;
+    // Keep withdrawable in sync when admin credits balance
+    if (!isNaN(totalAssets)) {
+      if (isNaN(withdrawable) || withdrawable === 0) {
+        data.withdrawable = totalAssets;
+      }
+      if (isNaN(equity)) data.equity = totalAssets;
+    }
     if (!isNaN(welcomeBonus)) {
       data.welcomeBonus = welcomeBonus;
       data.welcomeBonusDate = welcomeBonus > 0 ? new Date().toLocaleDateString() : '';

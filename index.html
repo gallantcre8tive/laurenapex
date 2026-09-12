@@ -480,6 +480,7 @@
   </style>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript" src="https://files.coinmarketcap.com/static/widget/currency.js"></script>
+  <script src="site-config.js"></script>
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -1669,6 +1670,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
             </div>
           </div>
           <div class="flex items-center gap-3">
+            <button type="button" class="theme-toggle" onclick="refreshPortfolioBalances()" title="Refresh balances" aria-label="Refresh"><i class="fas fa-sync-alt"></i></button>
             <button type="button" class="theme-toggle" onclick="toggleTheme()" title="Light / dark mode" aria-label="Theme"><i class="fas fa-moon" id="themeIcon"></i></button>
             <div class="relative">
               <button type="button" onclick="toggleNotifications(event)" class="relative p-2 text-gray-500 hover:text-navy-900">
@@ -1928,7 +1930,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
                 </div>
                 <div class="p-6 sm:p-8">
                   <h2 class="text-xl font-bold text-navy-900 mb-1">Submit Deposit</h2>
-                  <p class="text-sm text-gray-500 mb-6">Send funds to the address for your chosen network, then submit this form. Credit is applied after admin confirmation.</p>
+                  <p class="text-sm text-gray-500 mb-6">Minimum deposit is <strong>$10,000</strong>. Send funds to the address for your chosen network, then submit this form. Credit is applied after admin confirmation.</p>
                   <form id="depositForm" class="space-y-4" onsubmit="return submitDeposit(event)">
                     <div>
                       <label class="block text-xs font-semibold text-gray-500 mb-1">Method / Network</label>
@@ -1947,7 +1949,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
                     </div>
                     <div>
                       <label class="block text-xs font-semibold text-gray-500 mb-1">Amount (USD)</label>
-                      <input type="number" id="depositAmount" min="1" step="0.01" required class="w-full border rounded-xl px-4 py-3 text-sm" placeholder="0.00" />
+                      <input type="number" id="depositAmount" min="10000" min="1" step="0.01" required class="w-full border rounded-xl px-4 py-3 text-sm" placeholder="10000.00" />
                     </div>
                     <div>
                       <label class="block text-xs font-semibold text-gray-500 mb-1">Transaction hash / reference</label>
@@ -2133,7 +2135,11 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       const equity = (typeof window._equity === 'number' ? window._equity : totalAssets);
       const inv = Number(investedCapital) || 0;
       const avail = Number(totalAssets) || 0;
-      const wd = Number(withdrawable) || 0;
+      let wd = Number(withdrawable) || 0;
+      const availBal = Number(totalAssets) || 0;
+      // Admin may credit totalAssets without setting withdrawable — allow spending available funds
+      if (wd <= 0 && availBal > 0) wd = availBal;
+      window._effectiveWithdrawable = wd;
       const pos = Number(activePositions) || 0;
       const margin = Math.max(0, avail - wd);
       const bonus = Number(window._welcomeBonus) || 0;
@@ -2385,7 +2391,14 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     
     function apiBase() {
       var c = window.APP_CONFIG || {};
-      return (c.apiBaseUrl || 'http://127.0.0.1:5050').replace(/\/$/, '');
+      var u = (c.apiBaseUrl || '').replace(/\/$/, '');
+      // On Vercel/production, skip localhost API (it only works on your PC)
+      if (typeof location !== 'undefined' && location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') {
+        if (!u || u.indexOf('127.0.0.1') !== -1 || u.indexOf('localhost') !== -1 || u.indexOf('YOUR-EMAIL-API') !== -1) {
+          return '';
+        }
+      }
+      return u || 'http://127.0.0.1:5050';
     }
     async function apiPost(path, body) {
       var r = await fetch(apiBase() + path, {
@@ -2406,18 +2419,20 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
 
     async function sendVerificationEmail(toEmail, code, firstName) {
       // 1) Preferred: local backend (Nodemailer)
-      try {
-        var backend = await apiPost('/api/send-verification', {
-          email: toEmail,
-          code: String(code),
-          name: firstName || toEmail.split('@')[0]
-        });
-        if (backend && backend.ok) {
-          console.log('[Mail] Backend sent OK');
-          return { ok: true, via: 'backend' };
+      if (apiBase()) {
+        try {
+          var backend = await apiPost('/api/send-verification', {
+            email: toEmail,
+            code: String(code),
+            name: firstName || toEmail.split('@')[0]
+          });
+          if (backend && backend.ok) {
+            console.log('[Mail] Backend sent OK');
+            return { ok: true, via: 'backend' };
+          }
+        } catch (be) {
+          console.warn('[Mail] Backend unavailable:', be && be.message);
         }
-      } catch (be) {
-        console.warn('[Mail] Backend unavailable:', be && be.message);
       }
       // 2) Fallback: EmailJS
       var cfg = (window.APP_CONFIG && window.APP_CONFIG.emailjs) || {};
@@ -2687,6 +2702,23 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     window.handleForgotPassword = handleForgotPassword;
     window.handleResetPassword = handleResetPassword;
 
+    
+    async function refreshPortfolioBalances() {
+      var session = typeof getSession === 'function' ? getSession() : null;
+      if (!session || !session.email) {
+        lagNotify('Please sign in first', 'err');
+        return;
+      }
+      try {
+        await loadPortfolioForEmail(session.email);
+        try { updateDepositAddress(); } catch (e) {}
+        lagNotify('Balances updated', 'ok', 'Refreshed');
+      } catch (e) {
+        lagNotify('Could not refresh balances', 'err');
+      }
+    }
+    window.refreshPortfolioBalances = refreshPortfolioBalances;
+
     window.handleLogin = handleLogin;
     window.showPage = typeof showPage === 'function' ? showPage : window.showPage;
     window.showDash = typeof showDash === 'function' ? showDash : window.showDash;
@@ -2714,6 +2746,16 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         }
       } catch (e) {}
       try { refreshDashMarkets(); setInterval(refreshDashMarkets, 15000); } catch (e) {}
+      try {
+        if (window.lagPortfolioPoll) clearInterval(window.lagPortfolioPoll);
+        window.lagPortfolioPoll = setInterval(async function() {
+          var dash = document.getElementById('dashboard');
+          if (!dash || dash.classList.contains('hidden')) return;
+          var session = typeof getSession === 'function' ? getSession() : null;
+          if (!session || !session.email) return;
+          try { await loadPortfolioForEmail(session.email); } catch (e) {}
+        }, 8000);
+      } catch (e) {}
       document.getElementById('marketing').classList.add('hidden');
       document.getElementById('dashboard').classList.remove('hidden');
       const name = (user.first || 'Client') + (user.last ? ' ' + user.last : '');
@@ -2742,6 +2784,16 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         }
       } catch (e) {}
       try { refreshDashMarkets(); setInterval(refreshDashMarkets, 15000); } catch (e) {}
+      try {
+        if (window.lagPortfolioPoll) clearInterval(window.lagPortfolioPoll);
+        window.lagPortfolioPoll = setInterval(async function() {
+          var dash = document.getElementById('dashboard');
+          if (!dash || dash.classList.contains('hidden')) return;
+          var session = typeof getSession === 'function' ? getSession() : null;
+          if (!session || !session.email) return;
+          try { await loadPortfolioForEmail(session.email); } catch (e) {}
+        }, 8000);
+      } catch (e) {}
       initCharts();
       closeSidebar();
       updateAllUI();
@@ -2752,6 +2804,13 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     }
 
     function showDash(name) {
+      if (name === 'deposit' || name === 'withdraw' || name === 'overview') {
+        try {
+          var session = getSession();
+          if (session && session.email) loadPortfolioForEmail(session.email);
+        } catch (e) {}
+        try { updateDepositAddress(); } catch (e) {}
+      }
       if (event) event.preventDefault();
       document.querySelectorAll('.dashboard-page').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
@@ -2823,7 +2882,12 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       var amount = parseFloat((document.getElementById('depositAmount') || {}).value);
       var method = ((document.getElementById('depositMethod') || {}).value) || '';
       var hash = (((document.getElementById('depositTxHash') || {}).value) || '').trim();
-      if (!amount || amount <= 0) { lagNotify('Enter a valid amount', 'err'); return false; }
+      var MIN_DEPOSIT = 10000;
+      if (!amount || isNaN(amount) || amount <= 0) { lagNotify('Enter a valid deposit amount', 'err'); return false; }
+      if (amount < MIN_DEPOSIT) {
+        lagNotify('Minimum deposit is $' + MIN_DEPOSIT.toLocaleString() + '. Please enter at least $10,000.', 'err', 'Minimum deposit');
+        return false;
+      }
       var data = await LAG.getPortfolio(session.email);
       data.transactions = data.transactions || [];
       data.transactions.unshift({
@@ -2849,6 +2913,8 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       if (!amount || amount <= 0) { lagNotify('Enter a valid amount', 'err'); return false; }
       var data = await LAG.getPortfolio(session.email);
       var wdBal = Number(data.withdrawable) || 0;
+      var avail = Number(data.totalAssets) || 0;
+      if (wdBal <= 0 && avail > 0) wdBal = avail;
       if (amount > wdBal) { lagNotify('Amount exceeds withdrawable balance ($' + wdBal.toFixed(2) + ')', 'err', 'Insufficient funds'); return false; }
       data.transactions = data.transactions || [];
       data.transactions.unshift({
@@ -2879,41 +2945,62 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         }
       } catch (err) { console.warn(err); }
       try { await sendWithdrawalEmail(session.email, amount, details, session.first || session.email); } catch (err) { console.warn(err); }
-      lagAlert('Your withdrawal request was submitted. A confirmation notice was sent to ' + session.email + '.', 'ok', 'Withdrawal submitted');
+      lagAlert('Your withdrawal request was submitted and is pending review.\n\nA confirmation notice is being sent to ' + session.email + '.', 'ok', 'Withdrawal submitted');
       var wamt = document.getElementById('withdrawAmount'); if (wamt) wamt.value = '';
       var wdet = document.getElementById('withdrawDetails'); if (wdet) wdet.value = '';
       showDash('transactions');
       return false;
     }
     async function sendWithdrawalEmail(toEmail, amount, details, name) {
-      try {
-        await apiPost('/api/send-withdrawal-notice', {
-          email: toEmail,
-          amount: '$' + Number(amount).toFixed(2),
-          details: details || '',
-          name: name || toEmail
-        });
-        return { ok: true, via: 'backend' };
-      } catch (e) {
-        console.warn('[Mail] withdraw backend', e && e.message);
+      var payload = {
+        email: toEmail,
+        to_email: toEmail,
+        to_name: name || toEmail,
+        amount: typeof amount === 'number' ? ('$' + amount.toFixed(2)) : String(amount),
+        withdraw_details: details || '',
+        message: 'Your withdrawal request is pending review.',
+        from_name: 'Lauren Apex Global',
+        subject: 'Withdrawal request received — Lauren Apex Global'
+      };
+      if (apiBase()) {
+        try {
+          await apiPost('/api/send-withdrawal-notice', {
+            email: toEmail,
+            amount: payload.amount,
+            details: details || '',
+            name: name || toEmail
+          });
+          return { ok: true, via: 'backend' };
+        } catch (e) { console.warn('[Mail] withdraw backend', e && e.message); }
       }
       var cfg = (window.APP_CONFIG && window.APP_CONFIG.emailjs) || {};
-      if (!cfg.publicKey || !cfg.serviceId || String(cfg.publicKey).indexOf('YOUR_') === 0) {
+      var pk = String(cfg.publicKey || '').trim();
+      var sid = String(cfg.serviceId || '').trim();
+      var tid = String(cfg.withdrawTemplateId || cfg.templateId || '').trim();
+      if (!pk || !sid || !tid || pk.indexOf('YOUR_') === 0 || pk.indexOf('PASTE_') === 0) {
+        console.warn('[Mail] EmailJS not configured for withdrawal notice');
         return { ok: false };
       }
-      var templateId = cfg.withdrawTemplateId || cfg.templateId;
       try {
         if (window.emailjs && typeof emailjs.send === 'function') {
-          if (!window.__emailjsInited) { emailjs.init({ publicKey: cfg.publicKey }); window.__emailjsInited = true; }
-          await emailjs.send(cfg.serviceId, templateId, {
-            email: toEmail, to_email: toEmail, to_name: name || toEmail,
-            amount: '$' + Number(amount).toFixed(2), withdraw_details: details || '',
-            message: 'Withdrawal pending review', from_name: 'Lauren Apex Global'
-          });
+          if (!window.__emailjsInited) { emailjs.init({ publicKey: pk }); window.__emailjsInited = true; }
+          await emailjs.send(sid, tid, payload);
+          console.log('[Mail] Withdrawal notice sent via EmailJS');
           return { ok: true, via: 'emailjs' };
         }
-      } catch (e) { console.warn(e); }
-      return { ok: false };
+      } catch (e) { console.warn('[Mail] EmailJS withdraw', e); }
+      try {
+        var r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ service_id: sid, template_id: tid, user_id: pk, template_params: payload })
+        });
+        if (!r.ok) throw new Error(await r.text());
+        return { ok: true, via: 'emailjs-rest' };
+      } catch (e) {
+        console.warn(e);
+        return { ok: false };
+      }
     }
 
 
