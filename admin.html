@@ -359,17 +359,36 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     await init();
     let local = {};
     try { local = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { local = {}; }
-    if (!useFirebase) return local;
+    let cloud = {};
     try {
-      const snap = await db.collection('users').get();
-      const cloud = {};
-      snap.forEach(doc => { cloud[doc.id] = doc.data(); });
-      // Merge: localStorage wins on conflict so local signups always appear in admin
-      return Object.assign({}, cloud, local);
-    } catch (e) {
-      console.warn('[LAG] getUsers cloud failed, using localStorage', e);
-      return local;
+      var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
+      if (base && base.indexOf('127.0.0.1') === -1 && base.indexOf('localhost') === -1) {
+        var r = await fetch(base.replace(/\/$/, '') + '/api/users');
+        if (r.ok) {
+          var j = await r.json();
+          cloud = (j && j.users) || {};
+        }
+      }
+    } catch (e) { console.warn('[admin users api]', e); }
+    // merge: local + cloud (cloud fills gaps from other devices)
+    var merged = Object.assign({}, cloud, local);
+    // prefer local emailVerified true
+    Object.keys(cloud).forEach(function (em) {
+      if (!merged[em]) merged[em] = cloud[em];
+      else {
+        merged[em] = Object.assign({}, cloud[em], local[em] || {});
+        if (cloud[em].emailVerified || (local[em] && local[em].emailVerified)) merged[em].emailVerified = true;
+      }
+    });
+    if (useFirebase) {
+      try {
+        const snap = await db.collection('users').get();
+        snap.forEach(function (doc) {
+          merged[doc.id] = Object.assign({}, merged[doc.id] || {}, doc.data());
+        });
+      } catch (e) { console.warn(e); }
     }
+    return merged;
   }
   async function setUser(email, data) {
     await init();
@@ -380,15 +399,25 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
   }
   async function deleteUser(email) {
     await init();
+    email = String(email || '').trim().toLowerCase();
     if (useFirebase) {
-      await db.collection('users').doc(email).delete();
-      await db.collection('portfolios').doc(email).delete();
-      return;
+      try {
+        await db.collection('users').doc(email).delete();
+        await db.collection('portfolios').doc(email).delete();
+      } catch (e) { console.warn(e); }
     }
-    const users = JSON.parse(localStorage.getItem('lag_users') || '{}');
-    delete users[email];
-    localStorage.setItem('lag_users', JSON.stringify(users));
-    localStorage.removeItem('lag_portfolio_' + email);
+    try {
+      const users = JSON.parse(localStorage.getItem('lag_users') || '{}');
+      delete users[email];
+      localStorage.setItem('lag_users', JSON.stringify(users));
+      localStorage.removeItem('lag_portfolio_' + email);
+    } catch (e) { console.warn(e); }
+    try {
+      var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
+      if (base) {
+        await fetch(base.replace(/\/$/, '') + '/api/users/' + encodeURIComponent(email), { method: 'DELETE' });
+      }
+    } catch (e) { console.warn('[delete api]', e); }
   }
   function emptyPortfolio() {
     return { totalAssets: 0, equity: 0, investedCapital: 0, withdrawable: 0, activePositions: 0, holdings: [], transactions: [] };
@@ -1109,7 +1138,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       $('userCount').textContent = emails.length;
       const tbody = $('usersTableBody');
       if (!emails.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400">No users yet. Sign up on the main site using this same address (127.0.0.1:5500), then click Refresh.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400">No users yet. New signups sync via the live API. Click Refresh after users register on the main site.</td></tr>';
         return;
       }
       let html = '';
@@ -1128,9 +1157,24 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
           '<td class="text-xs">' + vBadge + '</td>' +
           '<td class="text-xs">' + (user.phone || '—') + '</td>' +
           '<td class="num font-semibold">$' + (Number(data.totalAssets) || 0).toFixed(2) + '</td>' +
-          '<td class="num"><button type="button" data-email="' + email + '" class="btn-edit text-gold-600 font-semibold text-xs">Edit</button></td></tr>';
+          '<td class="num whitespace-nowrap"><button type="button" data-email="' + email + '" class="btn-edit text-gold-600 font-semibold text-xs mr-2">Edit</button><button type="button" data-email="' + email + '" class="btn-delete text-red-600 font-semibold text-xs">Delete</button></td></tr>';
       }
       tbody.innerHTML = html;
+      tbody.querySelectorAll('.btn-delete').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+          var em = btn.getAttribute('data-email');
+          if (!em) return;
+          if (!confirm('Delete account permanently for\n' + em + '?\n\nThis cannot be undone.')) return;
+          try {
+            await LAG.deleteUser(em);
+            alert('User deleted: ' + em);
+            await renderUsers();
+            if (typeof renderStats === 'function') renderStats();
+          } catch (err) {
+            alert('Delete failed: ' + (err && err.message || err));
+          }
+        });
+      });
       tbody.querySelectorAll('.btn-edit').forEach(function (btn) {
         btn.addEventListener('click', function () { openModal(btn.getAttribute('data-email')); });
       });

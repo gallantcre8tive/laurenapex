@@ -26,7 +26,7 @@ function readStore() {
   try {
     if (fs.existsSync(STORE_FILE)) return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
   } catch (e) {}
-  return { resets: {} };
+  return { resets: {}, users: {} };
 }
 function writeStore(data) {
   fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2));
@@ -34,6 +34,10 @@ function writeStore(data) {
 function hashCode(code) {
   return crypto.createHash('sha256').update(String(code)).digest('hex');
 }
+
+app.get('/', (req, res) => {
+  res.type('text').send('Lauren Apex email API is running. Use /api/health');
+});
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -143,6 +147,52 @@ app.post('/api/send-withdrawal-notice', async (req, res) => {
     res.status(500).json({ ok: false, message: err.message });
   }
 });
+
+
+/** ---- User registry (shared across devices via Render) ---- */
+app.get('/api/users', (req, res) => {
+  try {
+    const store = readStore();
+    res.json({ ok: true, users: store.users || {} });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.post('/api/users', (req, res) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok: false, message: 'email required' });
+    const store = readStore();
+    store.users = store.users || {};
+    const prev = store.users[email] || {};
+    store.users[email] = {
+      ...prev,
+      ...req.body,
+      email,
+      updatedAt: new Date().toISOString()
+    };
+    // never store plain password long-term ideally; keep for this static app admin view
+    writeStore(store);
+    res.json({ ok: true, user: store.users[email] });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.delete('/api/users/:email', (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email || '').trim().toLowerCase();
+    const store = readStore();
+    store.users = store.users || {};
+    delete store.users[email];
+    writeStore(store);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log('Lauren Apex email API on http://127.0.0.1:' + PORT);

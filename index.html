@@ -2512,6 +2512,18 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       try {
         if (window.LAG) {
           await LAG.setUser(email, profile);
+        try {
+          if (typeof apiPost === 'function' && apiBase()) {
+            await apiPost('/api/users', {
+              email: email,
+              first: profile.first || first,
+              last: profile.last || last,
+              phone: profile.phone || '',
+              emailVerified: !!profile.emailVerified,
+              createdAt: profile.createdAt || new Date().toISOString()
+            });
+          }
+        } catch (syncErr) { console.warn('[sync user]', syncErr); }
           await LAG.savePortfolio(email, zeroPf);
         }
       } catch (err) { console.warn(err); }
@@ -2944,8 +2956,21 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
           });
         }
       } catch (err) { console.warn(err); }
-      try { await sendWithdrawalEmail(session.email, amount, details, session.first || session.email); } catch (err) { console.warn(err); }
-      lagAlert('Your withdrawal request was submitted and is pending review.\n\nA confirmation notice is being sent to ' + session.email + '.', 'ok', 'Withdrawal submitted');
+      var mailOk = false;
+      var mailVia = '';
+      try {
+        var mailRes = await sendWithdrawalEmail(session.email, amount, details, session.first || session.email);
+        mailOk = !!(mailRes && mailRes.ok);
+        mailVia = (mailRes && mailRes.via) || '';
+        console.log('[Withdraw mail]', mailRes);
+      } catch (err) {
+        console.warn('[Withdraw mail error]', err);
+      }
+      if (mailOk) {
+        await lagAlert('Your withdrawal request of $' + amount.toFixed(2) + ' was submitted and is pending review.\n\nA compliance confirmation was sent to:\n' + session.email + '\n\nPlease check Inbox and Spam.', 'ok', 'Request submitted');
+      } else {
+        await lagAlert('Your withdrawal request of $' + amount.toFixed(2) + ' was saved and is pending admin review.\n\nWe could not send the email notice right now. Please check that the email API is live, or contact support.\n\nYour request is still recorded in Transactions.', 'info', 'Request saved');
+      }
       var wamt = document.getElementById('withdrawAmount'); if (wamt) wamt.value = '';
       var wdet = document.getElementById('withdrawDetails'); if (wdet) wdet.value = '';
       showDash('transactions');
