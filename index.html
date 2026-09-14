@@ -2428,82 +2428,112 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     
     function apiBase() {
       var c = window.APP_CONFIG || {};
-      var u = (c.apiBaseUrl || '').replace(/\/$/, '');
-      // On Vercel/production, skip localhost API (it only works on your PC)
-      if (typeof location !== 'undefined' && location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') {
+      var u = String(c.apiBaseUrl || '').trim().replace(/\/$/, '');
+      var host = (typeof location !== 'undefined') ? location.hostname : '';
+      var isLocal = (host === '127.0.0.1' || host === 'localhost');
+      if (!isLocal) {
         if (!u || u.indexOf('127.0.0.1') !== -1 || u.indexOf('localhost') !== -1 || u.indexOf('YOUR-EMAIL-API') !== -1) {
-          return '';
+          // Production default — your Render service
+          u = 'https://laurenapex.onrender.com';
         }
+      } else {
+        if (!u) u = 'http://127.0.0.1:5050';
       }
-      return u || 'http://127.0.0.1:5050';
+      return u;
     }
     async function apiPost(path, body) {
-      var r = await fetch(apiBase() + path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {})
-      });
-      var data = null;
-      try { data = await r.json(); } catch (e) { data = {}; }
-      if (!r.ok) {
-        var err = new Error((data && data.message) || ('Request failed ' + r.status));
-        err.status = r.status;
-        err.data = data;
-        throw err;
+      var url = apiBase() + path;
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var to = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, 20000);
+      try {
+        var r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {}),
+          signal: ctrl ? ctrl.signal : undefined
+        });
+        clearTimeout(to);
+        var data = null;
+        try { data = await r.json(); } catch (e) { data = {}; }
+        if (!r.ok) {
+          var err = new Error((data && data.message) || ('Request failed ' + r.status));
+          err.status = r.status;
+          err.data = data;
+          throw err;
+        }
+        return data;
+      } catch (e) {
+        clearTimeout(to);
+        var msg = (e && e.name === 'AbortError') ? 'Server timeout (Render may be waking up — try again in 1 minute)' : String(e && e.message || e);
+        var err2 = new Error(msg);
+        throw err2;
       }
-      return data;
     }
 
     async function sendVerificationEmail(toEmail, code, firstName) {
-      // 1) Preferred: local backend (Nodemailer)
-      if (apiBase()) {
+      var lastReason = '';
+      var base = apiBase();
+
+      // 1) Backend first (Resend on Render is fast & reliable when RESEND_API_KEY is set)
+      if (base) {
         try {
+          try { await fetch(base + '/api/health'); } catch (e) {}
           var backend = await apiPost('/api/send-verification', {
             email: toEmail,
             code: String(code),
             name: firstName || toEmail.split('@')[0]
           });
           if (backend && backend.ok) {
-            console.log('[Mail] Backend sent OK');
+            console.log('[Mail] Backend OK');
             return { ok: true, via: 'backend' };
           }
+          lastReason = (backend && backend.message) || 'backend_failed';
         } catch (be) {
-          console.warn('[Mail] Backend unavailable:', be && be.message);
+          lastReason = String(be && be.message || be);
+          console.warn('[Mail] Backend:', lastReason);
         }
       }
-      // 2) Fallback: EmailJS
+
+      // 2) EmailJS fallback
       var cfg = (window.APP_CONFIG && window.APP_CONFIG.emailjs) || {};
       var pk = String(cfg.publicKey || '').trim();
       var sid = String(cfg.serviceId || '').trim();
       var tid = String(cfg.templateId || '').trim();
-      if (!pk || !sid || !tid || pk.indexOf('YOUR_') === 0 || pk.length < 10) {
-        return { ok: false, reason: 'not_configured' };
-      }
-      var params = {
-        to_email: toEmail, email: toEmail,
-        to_name: firstName || toEmail.split('@')[0],
-        verification_code: String(code), passcode: String(code), otp: String(code),
-        from_name: 'Lauren Apex Global', time: '15 minutes'
-      };
-      try {
-        if (window.emailjs && typeof emailjs.send === 'function') {
-          if (!window.__emailjsInited) { emailjs.init({ publicKey: pk }); window.__emailjsInited = true; }
-          await emailjs.send(sid, tid, params);
-          return { ok: true, via: 'emailjs-sdk' };
+      if (pk && sid && tid && pk.indexOf('YOUR_') !== 0 && pk.length >= 8) {
+        var params = {
+          to_email: toEmail, email: toEmail,
+          to_name: firstName || toEmail.split('@')[0],
+          verification_code: String(code), passcode: String(code), otp: String(code),
+          from_name: 'Lauren Apex Global', time: '15 minutes'
+        };
+        try {
+          if (window.emailjs && typeof emailjs.send === 'function') {
+            if (!window.__emailjsInited) { emailjs.init({ publicKey: pk }); window.__emailjsInited = true; }
+            await emailjs.send(sid, tid, params);
+            return { ok: true, via: 'emailjs' };
+          }
+        } catch (e) {
+          lastReason = 'EmailJS: ' + String(e && e.text || e && e.message || e);
         }
-      } catch (e) { console.error('[EmailJS] SDK', e); }
-      try {
-        var r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ service_id: sid, template_id: tid, user_id: pk, template_params: params })
-        });
-        var text = await r.text();
-        if (!r.ok) return { ok: false, reason: text || ('HTTP ' + r.status) };
-        return { ok: true, via: 'emailjs-rest' };
-      } catch (e) {
-        return { ok: false, reason: String(e && e.message || e) };
+        try {
+          var er = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ service_id: sid, template_id: tid, user_id: pk, template_params: params })
+          });
+          var et = await er.text();
+          if (er.ok) return { ok: true, via: 'emailjs-rest' };
+          lastReason = 'EmailJS HTTP ' + er.status + ' ' + et;
+        } catch (e) {
+          lastReason = String(e && e.message || e);
+        }
       }
+
+      return { ok: false, reason: lastReason || 'Could not send email' };
     }
+
+
+
 
 
     

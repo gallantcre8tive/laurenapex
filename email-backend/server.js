@@ -43,11 +43,21 @@ app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
     service: 'lauren-apex-email',
-    smtpConfigured: !!(process.env.SMTP_USER && process.env.SMTP_PASS)
+    smtpConfigured: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
+    resendConfigured: !!process.env.RESEND_API_KEY
   });
 });
 
 /** Signup verification email */
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise(function (_, reject) {
+      setTimeout(function () { reject(new Error((label || 'Operation') + ' timed out after ' + ms + 'ms')); }, ms);
+    })
+  ]);
+}
+
 app.post('/api/send-verification', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
@@ -56,10 +66,10 @@ app.post('/api/send-verification', async (req, res) => {
     if (!email || !code) {
       return res.status(400).json({ ok: false, message: 'email and code required' });
     }
-    await sendVerificationCode(email, code, name);
+    await withTimeout(sendVerificationCode(email, code, name), 20000, 'SMTP send');
     res.json({ ok: true, message: 'Verification email sent' });
   } catch (err) {
-    console.error(err);
+    console.error('[send-verification]', err);
     res.status(500).json({ ok: false, message: err.message || 'Failed to send email' });
   }
 });
