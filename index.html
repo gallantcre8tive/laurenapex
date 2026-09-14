@@ -360,6 +360,40 @@
       border-color: #d97706; color: #fef3c7;
     }
 
+    
+    #overviewVerifyBadge .badge-verified {
+      display: inline-block; padding: 0.2rem 0.55rem; border-radius: 9999px;
+      font-size: 10px; font-weight: 600;
+      background: #d1fae5; color: #065f46;
+    }
+    #overviewVerifyBadge .badge-unverified {
+      display: inline-block; padding: 0.2rem 0.55rem; border-radius: 9999px;
+      font-size: 10px; font-weight: 600;
+      background: #fef3c7; color: #92400e;
+    }
+
+    /* Email verified / unverified badge — visible in dark mode */
+    [data-theme="dark"] #overviewVerifyBadge span {
+      display: inline-block !important;
+      font-weight: 600 !important;
+      font-size: 10px !important;
+      padding: 0.2rem 0.55rem !important;
+      border-radius: 9999px !important;
+    }
+    [data-theme="dark"] #overviewVerifyBadge span.badge-verified,
+    [data-theme="dark"] #overviewVerifyBadge .badge-verified {
+      background: #064e3b !important;
+      color: #a7f3d0 !important;
+      border: 1px solid #34d399 !important;
+    }
+    [data-theme="dark"] #overviewVerifyBadge span.badge-unverified,
+    [data-theme="dark"] #overviewVerifyBadge .badge-unverified {
+      background: #78350f !important;
+      color: #fde68a !important;
+      border: 1px solid #fbbf24 !important;
+    }
+
+
   
     /* Professional in-app notices (no browser alert) */
     .lag-toast-host {
@@ -478,22 +512,7 @@
     [data-theme="dark"] .bonus-card {
       color: #fef3c7 !important;
     }
-
-  
-    html.dark #overviewVerifyBadge .badge-verified,
-    body.dark #overviewVerifyBadge span,
-    .dark #overviewVerifyBadge span {
-      background: rgba(16, 185, 129, 0.25) !important;
-      color: #6ee7b7 !important;
-      border: 1px solid rgba(52, 211, 153, 0.4);
-    }
-    html.dark #overviewVerifyBadge .badge-unverified,
-    .dark #overviewVerifyBadge span.unverified {
-      background: rgba(245, 158, 11, 0.25) !important;
-      color: #fcd34d !important;
-    }
-
-  </style>
+</style>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript" src="https://files.coinmarketcap.com/static/widget/currency.js"></script>
   <script src="site-config.js"></script>
@@ -1835,7 +1854,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
                   <p class="text-xs text-gray-400 mb-2">Your available funds</p>
                   <p class="text-3xl font-bold text-navy-900 mb-2" id="overviewBalanceBig">$0.00</p>
                   <p class="text-xs text-emerald-600 mb-1" id="overviewWithdrawStatus"><i class="fas fa-check-circle"></i> Available for withdrawal</p>
-                  <p class="text-xs mb-3" id="overviewVerifyBadge"><span class="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold">Email status</span></p>
+                  <p class="text-xs mb-3" id="overviewVerifyBadge"><span class="badge-unverified inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold">Unverified</span></p>
                   <p class="text-[10px] text-gray-400 mb-4" id="overviewLastUpdated">Last updated: —</p>
                   <div class="grid grid-cols-2 gap-2">
                     <button type="button" onclick="showDash('deposit')" class="px-3 py-2.5 rounded-xl bg-navy-900 text-white text-sm font-semibold hover:bg-navy-800"><i class="fas fa-plus mr-1"></i> Deposit</button>
@@ -2241,9 +2260,9 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
             try { u = JSON.parse(localStorage.getItem('lag_users') || '{}')[em]; } catch (e) {}
           }
           if (u && u.emailVerified) {
-            badge.innerHTML = '<span class="badge-verified inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold dark:bg-emerald-900/50 dark:text-emerald-300">Verified</span>';
+            badge.innerHTML = '<span class="badge-verified">Verified</span>';
           } else {
-            badge.innerHTML = '<span class="badge-unverified inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold dark:bg-amber-900/50 dark:text-amber-200">Unverified</span>';
+            badge.innerHTML = '<span class="badge-unverified">Unverified</span>';
           }
         }
       } catch (e) {}
@@ -3041,9 +3060,9 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         var badge = document.getElementById('overviewVerifyBadge');
         if (badge && user) {
           if (user.emailVerified) {
-            badge.innerHTML = '<span class="badge-verified inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold dark:bg-emerald-900/50 dark:text-emerald-300">Verified</span>';
+            badge.innerHTML = '<span class="badge-verified">Verified</span>';
           } else {
-            badge.innerHTML = '<span class="badge-unverified inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold dark:bg-amber-900/50 dark:text-amber-200">Unverified</span>';
+            badge.innerHTML = '<span class="badge-unverified">Unverified</span>';
           }
         }
       } catch (e) {}
@@ -3079,9 +3098,9 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         var badge = document.getElementById('overviewVerifyBadge');
         if (badge && user) {
           if (user.emailVerified) {
-            badge.innerHTML = '<span class="badge-verified inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold dark:bg-emerald-900/50 dark:text-emerald-300">Verified</span>';
+            badge.innerHTML = '<span class="badge-verified">Verified</span>';
           } else {
-            badge.innerHTML = '<span class="badge-unverified inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold dark:bg-amber-900/50 dark:text-amber-200">Unverified</span>';
+            badge.innerHTML = '<span class="badge-unverified">Unverified</span>';
           }
         }
       } catch (e) {}
