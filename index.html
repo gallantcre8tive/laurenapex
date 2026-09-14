@@ -631,36 +631,48 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
   }
 
   async function getPortfolio(email) {
-    await init();
-    const key = 'lag_portfolio_' + email;
-    let local = null;
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw) local = { ...emptyPortfolio(), ...JSON.parse(raw) };
-    } catch (e) {}
-    if (useFirebase) {
+      await init();
+      email = String(email || '').trim().toLowerCase();
+      const key = 'lag_portfolio_' + email;
+      let local = null;
       try {
-        const doc = await db.collection('portfolios').doc(email).get();
-        if (doc.exists) {
-          const cloud = { ...emptyPortfolio(), ...doc.data() };
-          // Prefer newer updatedAt
-          const lt = local && local.updatedAt ? Date.parse(local.updatedAt) : 0;
-          const ct = cloud.updatedAt ? Date.parse(cloud.updatedAt) : 0;
-          if (local && lt >= ct) return local;
-          return cloud;
+        const raw = localStorage.getItem(key);
+        if (raw) local = Object.assign(emptyPortfolio(), JSON.parse(raw));
+      } catch (e) {}
+      let cloud = null;
+      try {
+        var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
+        if (base) {
+          var r = await fetch(String(base).replace(/\/$/, '') + '/api/portfolio/' + encodeURIComponent(email));
+          if (r.ok) {
+            var j = await r.json();
+            if (j && j.portfolio) cloud = Object.assign(emptyPortfolio(), j.portfolio);
+          }
         }
-      } catch (e) {
-        console.warn('[LAG] getPortfolio cloud failed', e);
+      } catch (e) {}
+      if (useFirebase) {
+        try {
+          const doc = await db.collection('portfolios').doc(email).get();
+          if (doc.exists) {
+            var fb = Object.assign(emptyPortfolio(), doc.data());
+            local = Object.assign({}, fb, local || {});
+          }
+        } catch (e) {}
       }
-    }
-    if (local) return local;
-    const empty = emptyPortfolio();
-    try { localStorage.setItem(key, JSON.stringify(empty)); } catch (e) {}
-    return empty;
+      var merged = Object.assign(emptyPortfolio(), cloud || {}, local || {});
+      if (cloud && local) {
+        var ct = Date.parse(cloud.updatedAt || 0) || 0;
+        var lt = Date.parse(local.updatedAt || 0) || 0;
+        merged = ct >= lt ? Object.assign(emptyPortfolio(), local, cloud) : Object.assign(emptyPortfolio(), cloud, local);
+      }
+      try { localStorage.setItem(key, JSON.stringify(merged)); } catch (e) {}
+      return merged;
   }
 
   async function savePortfolio(email, data) {
     await init();
+    email = String(email || '').trim().toLowerCase();
+    data = data || {};
     data.updatedAt = new Date().toISOString();
     try {
       localStorage.setItem('lag_portfolio_' + email, JSON.stringify(data));
@@ -669,9 +681,20 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       try {
         await db.collection('portfolios').doc(email).set(data, { merge: true });
       } catch (e) {
-        console.warn('[LAG] Firestore savePortfolio failed, using localStorage', e);
+        console.warn('[LAG] Firebase portfolio', e);
       }
     }
+    try {
+      var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
+      if (base) {
+        await fetch(String(base).replace(/\/$/, '') + '/api/portfolio/' + encodeURIComponent(email), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+      }
+    } catch (e) { console.warn('[LAG] portfolio api', e); }
+    return data;
   }
 
   async function getAllPortfolios() {
@@ -2469,96 +2492,166 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     }
 
 
+    
+    async function fetchCloudUsers() {
+      try {
+        var base = apiBase();
+        if (!base) return {};
+        var r = await fetch(base + '/api/users');
+        if (!r.ok) return {};
+        var j = await r.json();
+        return (j && j.users) || {};
+      } catch (e) {
+        console.warn('[users api]', e);
+        return {};
+      }
+    }
+
+    async function syncUserToCloud(profile) {
+      if (!profile || !profile.email) return;
+      try {
+        if (!apiBase()) return;
+        await apiPost('/api/users', {
+          email: profile.email,
+          first: profile.first || '',
+          last: profile.last || '',
+          phone: profile.phone || '',
+          country: profile.country || '',
+          password: profile.password || '',
+          emailVerified: !!profile.emailVerified,
+          createdAt: profile.createdAt || new Date().toISOString()
+        });
+      } catch (e) { console.warn('[sync user]', e); }
+    }
+
+    async function resolveUserAccount(email) {
+      email = String(email || '').trim().toLowerCase();
+      var localUsers = {};
+      try { localUsers = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { localUsers = {}; }
+      var local = localUsers[email] || null;
+      var cloudUsers = await fetchCloudUsers();
+      var cloud = cloudUsers[email] || null;
+      // Prefer local password if both exist
+      var user = null;
+      if (local && cloud) {
+        user = Object.assign({}, cloud, local);
+        if (cloud.password && !local.password) user.password = cloud.password;
+        if (local.password) user.password = local.password;
+        if (cloud.emailVerified || local.emailVerified) user.emailVerified = true;
+      } else {
+        user = local || cloud || null;
+      }
+      if (user) {
+        localUsers[email] = user;
+        try { localStorage.setItem('lag_users', JSON.stringify(localUsers)); } catch (e) {}
+      }
+      return user;
+    }
+
+
     async function handleRegister(e) {
       e.preventDefault();
-      const email = document.getElementById('regEmail').value.trim().toLowerCase();
-      const pass = document.getElementById('regPassword').value;
-      const confirm = document.getElementById('regConfirm').value;
-      const country = document.getElementById('regCountry').value;
-      const phoneCode = document.getElementById('regPhoneCode').value.trim();
-      const phoneNum = document.getElementById('regPhone').value.trim();
-      const phone = (phoneCode + ' ' + phoneNum).trim();
-      const captchaIn = (document.getElementById('regCaptcha').value || '').trim().toUpperCase();
-      if (pass !== confirm) { lagNotify('Passwords do not match', 'err', 'Check form'); return; }
-      if (pass.length < 6) { lagNotify('Password must be at least 6 characters', 'err', 'Check form'); return; }
-      if (!country) { lagNotify('Please select your country', 'err', 'Check form'); return; }
-      if (!phoneNum) { lagNotify('Please enter your phone number', 'err', 'Check form'); return; }
-      const capEl = document.getElementById('regCaptcha');
-      if (capEl && typeof captchaCode === 'string' && captchaCode) {
-        if (captchaIn !== captchaCode) { lagNotify('Captcha code is incorrect. Try again.', 'err', 'Captcha'); if (typeof refreshCaptcha === 'function') refreshCaptcha(); return; }
-      }
-      const users = JSON.parse(localStorage.getItem('lag_users') || '{}');
-      if (users[email]) {
-        lagAlert('An account with this email already exists. Please sign in instead.', 'info', 'Account exists');
-        showPage('login');
-        return;
-      }
-      const first = email.split('@')[0];
-      const verifyCode = String(Math.floor(100000 + Math.random() * 900000));
-      const profile = {
-        first, last: '', email, password: pass, phone, country,
-        createdAt: new Date().toISOString(),
-        emailVerified: false,
-        verifyCode: verifyCode
-      };
-      users[email] = profile;
-      localStorage.setItem('lag_users', JSON.stringify(users));
-      const zeroPf = {
-        totalAssets: 0, equity: 0, investedCapital: 0, withdrawable: 0,
-        activePositions: 0, holdings: [], transactions: [], positions: [],
-        welcomeBonus: 0
-      };
-      localStorage.setItem('lag_portfolio_' + email, JSON.stringify(zeroPf));
       try {
-        if (window.LAG) {
-          await LAG.setUser(email, profile);
-        try {
-          if (typeof apiPost === 'function' && apiBase()) {
-            await apiPost('/api/users', {
-              email: email,
-              first: profile.first || first,
-              last: profile.last || last,
-              phone: profile.phone || '',
-              emailVerified: !!profile.emailVerified,
-              createdAt: profile.createdAt || new Date().toISOString()
-            });
-          }
-        } catch (syncErr) { console.warn('[sync user]', syncErr); }
-          await LAG.savePortfolio(email, zeroPf);
-        }
-      } catch (err) { console.warn(err); }
+        var email = (document.getElementById('regEmail').value || '').trim().toLowerCase();
+        var pass = document.getElementById('regPassword').value;
+        var confirm = document.getElementById('regConfirm').value;
+        var countryEl = document.getElementById('regCountry');
+        var country = countryEl ? countryEl.value : '';
+        var phoneCode = ((document.getElementById('regPhoneCode') || {}).value || '').trim();
+        var phoneNum = ((document.getElementById('regPhone') || {}).value || '').trim();
+        var phone = (phoneCode + ' ' + phoneNum).trim();
+        var captchaIn = ((document.getElementById('regCaptcha') || {}).value || '').trim().toUpperCase();
 
-      // Try EmailJS; always show code so user can verify
-      let mailed = false;
-      let mailResult = null;
-      try {
-        if (typeof sendVerificationEmail === 'function') {
+        if (!email || email.indexOf('@') < 1) {
+          lagNotify('Enter a valid email address', 'err'); return;
+        }
+        if (pass !== confirm) { lagNotify('Passwords do not match', 'err'); return; }
+        if (pass.length < 6) { lagNotify('Password must be at least 6 characters', 'err'); return; }
+        if (countryEl && !country) { lagNotify('Please select your country', 'err'); return; }
+        if (!phoneNum) { lagNotify('Please enter your phone number', 'err'); return; }
+        if (typeof captchaCode === 'string' && captchaCode) {
+          if (captchaIn !== captchaCode) {
+            lagNotify('Captcha is incorrect. Try again.', 'err');
+            if (typeof refreshCaptcha === 'function') refreshCaptcha();
+            return;
+          }
+        }
+
+        // Exists only if a real account with password is stored
+        var existing = await resolveUserAccount(email);
+        if (existing && existing.password) {
+          lagAlert('This email already has an account. Please sign in, or use Forgot password if you need a new password.', 'info', 'Account exists');
+          showPage('login');
+          if (document.getElementById('loginEmail')) document.getElementById('loginEmail').value = email;
+          return;
+        }
+
+        var first = email.split('@')[0];
+        var verifyCode = String(Math.floor(100000 + Math.random() * 900000));
+        var profile = {
+          first: first,
+          last: '',
+          email: email,
+          password: pass,
+          phone: phone,
+          country: country,
+          createdAt: new Date().toISOString(),
+          emailVerified: false,
+          verifyCode: verifyCode
+        };
+
+        var users = {};
+        try { users = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { users = {}; }
+        users[email] = profile;
+        localStorage.setItem('lag_users', JSON.stringify(users));
+
+        var zeroPf = {
+          totalAssets: 0, equity: 0, investedCapital: 0, withdrawable: 0,
+          activePositions: 0, holdings: [], transactions: [], positions: [],
+          welcomeBonus: 0, updatedAt: new Date().toISOString()
+        };
+        localStorage.setItem('lag_portfolio_' + email, JSON.stringify(zeroPf));
+
+        try {
+          if (window.LAG) {
+            await LAG.setUser(email, profile);
+            await LAG.savePortfolio(email, zeroPf);
+          }
+        } catch (err) { console.warn(err); }
+
+        await syncUserToCloud(profile);
+
+        var mailed = false;
+        var mailResult = null;
+        try {
           mailResult = await sendVerificationEmail(email, verifyCode, first);
           mailed = !!(mailResult && mailResult.ok);
+        } catch (err) {
+          mailResult = { ok: false, reason: String(err && err.message || err) };
         }
-      } catch (err) {
-        console.warn(err);
-        mailResult = { ok: false, reason: String(err && err.message || err) };
-      }
 
-      sessionStorage.setItem('lag_pending_verify', email);
-      var msg;
-      var mailReason = (typeof mailResult !== 'undefined' && mailResult && mailResult.reason) ? mailResult.reason : '';
-      if (mailed) {
-        msg = 'Your account has been created.\n\nA verification code was sent to:\n' + email + '\n\nPlease check your inbox and enter the code on the next step to activate your account.';
-      } else if (mailReason === 'not_configured') {
-        msg = 'Account created.\n\nEmailJS keys not loaded. Save config.js next to index.html and hard-refresh (Ctrl+Shift+R).\n\nTemporary code: ' + verifyCode;
-      } else {
-        msg = 'Account created.\n\nCould not send email: ' + (mailReason || 'unknown') + '\n\nOpen EmailJS → Email History for the error. Common fix: Service ID must be like service_xxxxx not only a name.\n\nTemporary code: ' + verifyCode;
+        sessionStorage.setItem('lag_pending_verify', email);
+        sessionStorage.setItem('lag_pending_code', verifyCode);
+
+        var msg;
+        if (mailed) {
+          msg = 'Account created successfully.\\n\\nA verification code was sent to:\\n' + email + '\\n\\nCheck your inbox (and Spam), enter the code on the next screen, then sign in with your email and password.';
+        } else {
+          msg = 'Account created.\\n\\nWe could not send email automatically (' + ((mailResult && mailResult.reason) || 'mail service unavailable') + ').\\n\\nYour verification code is:\\n' + verifyCode + '\\n\\nEnter it on the next screen, then sign in.';
+        }
+        await lagAlert(msg, mailed ? 'ok' : 'info', mailed ? 'Check your email' : 'Account created');
+        showPage('verify');
+        var ve = document.getElementById('verifyEmailDisplay');
+        if (ve) ve.textContent = email;
+        var vi = document.getElementById('verifyCodeInputPage');
+        if (vi) { vi.value = ''; vi.focus(); }
+        if (typeof refreshCaptcha === 'function') refreshCaptcha();
+      } catch (err) {
+        console.error(err);
+        lagNotify('Signup error: ' + (err && err.message ? err.message : 'please try again'), 'err');
       }
-      await lagAlert(msg, mailed ? 'ok' : 'info', mailed ? 'Verify your email' : 'Account created');
-      showPage('verify');
-      var ve = document.getElementById('verifyEmailDisplay');
-      if (ve) ve.textContent = email;
-      var vi = document.getElementById('verifyCodeInputPage');
-      if (vi) { vi.value = ''; vi.focus(); }
-      if (typeof refreshCaptcha === 'function') refreshCaptcha();
     }
+
 
 
     
@@ -2596,6 +2689,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       users[email] = profile;
       localStorage.setItem('lag_users', JSON.stringify(users));
       try { if (window.LAG) await LAG.setUser(email, profile); } catch (err) { console.warn(err); }
+      try { await syncUserToCloud(profile); } catch (e) {}
 
       // Portfolio stays at zero — only admin can grant bonus / funds
       try {
@@ -2623,32 +2717,38 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     async function handleLogin(e) {
       e.preventDefault();
       try {
-        const email = document.getElementById('loginEmail').value.trim().toLowerCase();
-        const pass = document.getElementById('loginPassword').value;
-        const rememberEl = document.getElementById('rememberMe');
-        const remember = rememberEl ? !!rememberEl.checked : true;
-        const users = JSON.parse(localStorage.getItem('lag_users') || '{}');
-        const user = users[email];
-        if (!user || String(user.password) !== String(pass)) {
+        var email = (document.getElementById('loginEmail').value || '').trim().toLowerCase();
+        var pass = document.getElementById('loginPassword').value;
+        var rememberEl = document.getElementById('rememberMe');
+        var remember = rememberEl ? !!rememberEl.checked : true;
+        if (!email || !pass) {
+          lagNotify('Enter email and password', 'err');
+          return;
+        }
+
+        var user = await resolveUserAccount(email);
+        if (!user || !user.password || String(user.password) !== String(pass)) {
           lagNotify('Invalid email or password', 'err', 'Sign in failed');
           return;
         }
+
         if (!user.emailVerified) {
           sessionStorage.setItem('lag_pending_verify', email);
-          lagAlert('Please verify your email before signing in. Enter the 6-digit code from signup on the verification screen.', 'info', 'Email verification required');
+          if (user.verifyCode) sessionStorage.setItem('lag_pending_code', user.verifyCode);
+          lagAlert('Please verify your email first. Enter the 6-digit code we sent, then sign in.', 'info', 'Verification required');
           showPage('verify');
-          const ve = document.getElementById('verifyEmailDisplay');
+          var ve = document.getElementById('verifyEmailDisplay');
           if (ve) ve.textContent = email;
           return;
         }
-        const sessionUser = {
+
+        var sessionUser = {
           first: user.first || email.split('@')[0],
           last: user.last || '',
           email: user.email || email,
           phone: user.phone || '',
           country: user.country || ''
         };
-        // Always set session so dashboard works; remember flag stored for convenience
         setSession(sessionUser);
         if (remember) {
           try { localStorage.setItem('lag_remember', email); } catch (e) {}
@@ -2659,6 +2759,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         lagNotify('Login error: ' + (err && err.message ? err.message : 'please try again'), 'err');
       }
     }
+
 
     window.handleRegister = handleRegister;
     window.copyDepositAddress = copyDepositAddress;
@@ -2685,32 +2786,46 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     }
     async function handleResetPassword(e) {
       e.preventDefault();
-      var email = sessionStorage.getItem('lag_reset_email') || (document.getElementById('forgotEmail').value || '').trim().toLowerCase();
-      var code = (document.getElementById('resetCode').value || '').trim();
-      var p1 = document.getElementById('resetPassword').value;
-      var p2 = document.getElementById('resetPassword2').value;
-      if (p1 !== p2) { lagNotify('Passwords do not match', 'err'); return false; }
-      if (p1.length < 6) { lagNotify('Password must be at least 6 characters', 'err'); return false; }
       try {
-        await apiPost('/api/reset-password', { email: email, code: code, password: p1 });
+        var email = sessionStorage.getItem('lag_reset_email') || ((document.getElementById('forgotEmail') || {}).value || '').trim().toLowerCase();
+        var code = ((document.getElementById('resetCode') || {}).value || '').trim();
+        var p1 = (document.getElementById('resetPassword') || {}).value || '';
+        var p2 = (document.getElementById('resetPassword2') || {}).value || '';
+        if (!email) { lagNotify('Enter your email first', 'err'); return false; }
+        if (p1 !== p2) { lagNotify('Passwords do not match', 'err'); return false; }
+        if (p1.length < 6) { lagNotify('Password must be at least 6 characters', 'err'); return false; }
+
+        try {
+          await apiPost('/api/reset-password', { email: email, code: code, password: p1 });
+        } catch (err) {
+          lagNotify(err.message || 'Invalid or expired code', 'err');
+          return false;
+        }
+
+        var user = await resolveUserAccount(email);
+        var users = {};
+        try { users = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { users = {}; }
+        if (!user) {
+          user = { email: email, first: email.split('@')[0], last: '', emailVerified: true };
+        }
+        user.password = p1;
+        user.emailVerified = true;
+        users[email] = user;
+        localStorage.setItem('lag_users', JSON.stringify(users));
+        try { if (window.LAG) await LAG.setUser(email, user); } catch (e) {}
+        await syncUserToCloud(user);
+
+        sessionStorage.removeItem('lag_reset_email');
+        await lagAlert('Password updated successfully. You can sign in now.', 'ok', 'Password changed');
+        showPage('login');
+        if (document.getElementById('loginEmail')) document.getElementById('loginEmail').value = email;
+        if (document.getElementById('loginPassword')) document.getElementById('loginPassword').value = '';
       } catch (err) {
-        lagNotify(err.message || 'Invalid or expired code', 'err');
-        return false;
+        lagNotify(err.message || 'Could not reset password', 'err');
       }
-      var users = JSON.parse(localStorage.getItem('lag_users') || '{}');
-      if (!users[email]) {
-        lagNotify('No local account found for this email on this device.', 'err');
-        return false;
-      }
-      users[email].password = p1;
-      localStorage.setItem('lag_users', JSON.stringify(users));
-      try { if (window.LAG) await LAG.setUser(email, users[email]); } catch (e) {}
-      sessionStorage.removeItem('lag_reset_email');
-      await lagAlert('Password updated. You can sign in now.', 'ok', 'Success');
-      showPage('login');
-      if (document.getElementById('loginEmail')) document.getElementById('loginEmail').value = email;
       return false;
     }
+
     window.handleForgotPassword = handleForgotPassword;
     window.handleResetPassword = handleResetPassword;
 

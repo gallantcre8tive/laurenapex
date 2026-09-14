@@ -26,7 +26,7 @@ function readStore() {
   try {
     if (fs.existsSync(STORE_FILE)) return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
   } catch (e) {}
-  return { resets: {}, users: {} };
+  return { resets: {}, users: {}, portfolios: {} };
 }
 function writeStore(data) {
   fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2));
@@ -123,9 +123,22 @@ app.post('/api/reset-password', (req, res) => {
       return res.status(400).json({ ok: false, message: 'Invalid or expired code' });
     }
     delete store.resets[email];
+    store.users = store.users || {};
+    if (store.users[email]) {
+      store.users[email].password = password;
+      store.users[email].emailVerified = true;
+      store.users[email].updatedAt = new Date().toISOString();
+    } else {
+      store.users[email] = {
+        email: email,
+        password: password,
+        emailVerified: true,
+        first: email.split('@')[0],
+        updatedAt: new Date().toISOString()
+      };
+    }
     writeStore(store);
-    // Password change is applied on the client (localStorage user record)
-    res.json({ ok: true, message: 'Password reset allowed', email });
+    res.json({ ok: true, message: 'Password reset successful', email });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
@@ -188,6 +201,43 @@ app.delete('/api/users/:email', (req, res) => {
     delete store.users[email];
     writeStore(store);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+
+
+/** ---- Portfolios (for admin pending approve across devices) ---- */
+app.get('/api/portfolio/:email', (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email || '').trim().toLowerCase();
+    const store = readStore();
+    store.portfolios = store.portfolios || {};
+    res.json({ ok: true, portfolio: store.portfolios[email] || null });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.get('/api/portfolios', (req, res) => {
+  try {
+    const store = readStore();
+    res.json({ ok: true, portfolios: store.portfolios || {} });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+app.post('/api/portfolio/:email', (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok: false, message: 'email required' });
+    const store = readStore();
+    store.portfolios = store.portfolios || {};
+    store.portfolios[email] = Object.assign({}, req.body || {}, { email: email, updatedAt: new Date().toISOString() });
+    writeStore(store);
+    res.json({ ok: true, portfolio: store.portfolios[email] });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }

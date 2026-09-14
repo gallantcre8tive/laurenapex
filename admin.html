@@ -424,44 +424,94 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
   }
   async function getPortfolio(email) {
     await init();
+    email = String(email || '').trim().toLowerCase();
+    var local = null;
+    try {
+      var raw = localStorage.getItem('lag_portfolio_' + email);
+      if (raw) local = JSON.parse(raw);
+    } catch (e) {}
+    var cloud = null;
+    try {
+      var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
+      if (base) {
+        var r = await fetch(base.replace(/\/$/, '') + '/api/portfolio/' + encodeURIComponent(email));
+        if (r.ok) {
+          var j = await r.json();
+          cloud = j && j.portfolio;
+        }
+      }
+    } catch (e) { console.warn(e); }
     if (useFirebase) {
-      const doc = await db.collection('portfolios').doc(email).get();
-      if (doc.exists) return { ...emptyPortfolio(), ...doc.data() };
-      const empty = emptyPortfolio();
-      await db.collection('portfolios').doc(email).set(empty);
-      return empty;
+      try {
+        const doc = await db.collection('portfolios').doc(email).get();
+        if (doc.exists) return Object.assign(emptyPortfolio(), doc.data(), local || {});
+      } catch (e) {}
     }
-    const key = 'lag_portfolio_' + email;
-    const raw = localStorage.getItem(key);
-    if (raw) { try { return { ...emptyPortfolio(), ...JSON.parse(raw) }; } catch (e) {} }
-    const empty = emptyPortfolio();
-    localStorage.setItem(key, JSON.stringify(empty));
-    return empty;
+    var merged = Object.assign(emptyPortfolio(), cloud || {}, local || {});
+    // prefer newer updatedAt
+    if (cloud && local) {
+      var ct = Date.parse(cloud.updatedAt || 0) || 0;
+      var lt = Date.parse(local.updatedAt || 0) || 0;
+      merged = ct > lt ? Object.assign(emptyPortfolio(), local, cloud) : Object.assign(emptyPortfolio(), cloud, local);
+    }
+    return merged;
   }
   async function savePortfolio(email, data) {
     await init();
+    email = String(email || '').trim().toLowerCase();
+    data = data || emptyPortfolio();
     data.updatedAt = new Date().toISOString();
-    if (useFirebase) { await db.collection('portfolios').doc(email).set(data, { merge: true }); return; }
     localStorage.setItem('lag_portfolio_' + email, JSON.stringify(data));
+    if (useFirebase) {
+      try { await db.collection('portfolios').doc(email).set(data, { merge: true }); } catch (e) { console.warn(e); }
+    }
+    try {
+      var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
+      if (base) {
+        await fetch(base.replace(/\/$/, '') + '/api/portfolio/' + encodeURIComponent(email), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+      }
+    } catch (e) { console.warn('[save portfolio api]', e); }
+    return data;
   }
   async function getAllPortfolios() {
     await init();
-    const users = await getUsers();
-    const out = {};
-    for (const email of Object.keys(users)) {
-      out[email] = await getPortfolio(email);
-    }
+    var map = {};
+    try {
+      var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
+      if (base) {
+        var r = await fetch(base.replace(/\/$/, '') + '/api/portfolios');
+        if (r.ok) {
+          var j = await r.json();
+          map = Object.assign({}, (j && j.portfolios) || {});
+        }
+      }
+    } catch (e) { console.warn(e); }
+    // merge local keys
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('lag_portfolio_') === 0) {
+          var email = k.replace('lag_portfolio_', '');
+          try {
+            var local = JSON.parse(localStorage.getItem(k));
+            map[email] = Object.assign({}, map[email] || {}, local || {});
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
     if (useFirebase) {
       try {
-        const snap = await db.collection('portfolios').get();
-        snap.forEach(doc => {
-          if (!out[doc.id]) out[doc.id] = doc.data();
+        var snap = await db.collection('portfolios').get();
+        snap.forEach(function (doc) {
+          map[doc.id] = Object.assign({}, map[doc.id] || {}, doc.data());
         });
-      } catch (e) {
-        console.warn('[LAG] getAllPortfolios cloud failed', e);
-      }
+      } catch (e) {}
     }
-    return out;
+    return map;
   }
   async function getNotifications() {
     await init();
@@ -692,7 +742,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
           <div class="card overflow-hidden">
             <div class="p-3 sm:p-4 border-b border-slate-100">
               <h2 class="font-semibold text-navy-900 text-sm">Pending requests</h2>
-              <p class="text-[11px] text-slate-400 mt-0.5">Approve deposits to credit portfolios.</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Approve deposits to credit the user. Reject/Cancel leaves balances unchanged. Withdrawals deduct on Approve.</p>
             </div>
             <div class="table-wrap">
               <table class="data" style="min-width:520px">
@@ -1344,18 +1394,52 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
   }
 
   async function setPendingStatus(email, idx, status) {
+    email = String(email || '').trim().toLowerCase();
     const data = await LAG.getPortfolio(email);
-    if (!data.transactions || !data.transactions[idx]) return;
-    data.transactions[idx].status = status;
-    if (status === 'Completed' && data.transactions[idx].type === 'Deposit') {
-      const amt = Number(data.transactions[idx].amount) || 0;
-      data.totalAssets = (data.totalAssets || 0) + amt;
-      data.investedCapital = (data.investedCapital || 0) + amt;
-      data.equity = (data.equity != null ? data.equity : 0) + amt;
+    if (!data.transactions || !data.transactions[idx]) {
+      alert('Transaction not found. Click Refresh and try again.');
+      return;
     }
+    const tx = data.transactions[idx];
+    if (tx.status !== 'Pending') {
+      alert('This request is no longer pending.');
+      await renderPending();
+      return;
+    }
+    const amt = Math.abs(Number(tx.amount) || 0);
+    const type = String(tx.type || '');
+
+    if (status === 'Completed') {
+      if (type === 'Deposit') {
+        data.totalAssets = (Number(data.totalAssets) || 0) + amt;
+        data.investedCapital = (Number(data.investedCapital) || 0) + amt;
+        data.equity = (Number(data.equity) || 0) + amt;
+        data.withdrawable = (Number(data.withdrawable) || 0) + amt;
+      } else if (type === 'Withdrawal') {
+        var bal = Number(data.totalAssets) || 0;
+        var wd = Number(data.withdrawable) || 0;
+        if (amt > bal && amt > wd) {
+          if (!confirm('Amount exceeds balance. Approve anyway?')) return;
+        }
+        data.totalAssets = Math.max(0, bal - amt);
+        data.equity = Math.max(0, (Number(data.equity) || 0) - amt);
+        data.withdrawable = Math.max(0, wd - amt);
+      }
+      tx.status = 'Completed';
+    } else if (status === 'Rejected' || status === 'Cancelled') {
+      tx.status = status === 'Cancelled' ? 'Cancelled' : 'Rejected';
+    } else {
+      tx.status = status;
+    }
+
+    data.transactions[idx] = tx;
+    data.updatedAt = new Date().toISOString();
     await LAG.savePortfolio(email, data);
+    alert(type + ' marked ' + tx.status + ' for ' + email);
     await renderPending();
-    await updateOverview();
+    if (typeof renderUsers === 'function') await renderUsers();
+    if (typeof updateOverview === 'function') await updateOverview();
+    if (typeof renderStats === 'function') await renderStats();
   }
 
   async function fillTargets() {
