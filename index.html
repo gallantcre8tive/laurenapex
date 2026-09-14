@@ -512,7 +512,88 @@
     [data-theme="dark"] .bonus-card {
       color: #fef3c7 !important;
     }
-</style>
+
+    /* Transaction table — readable in light & dark */
+    .tx-row { border-top: 1px solid rgba(148,163,184,0.15); }
+    .tx-cell { color: inherit; }
+    .tx-badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 0.25rem;
+      font-size: 0.75rem; font-weight: 600; white-space: nowrap;
+    }
+    .tx-type-deposit { background: #d1fae5; color: #065f46; }
+    .tx-type-withdrawal { background: #fee2e2; color: #991b1b; }
+    .tx-type-adjustment { background: #dbeafe; color: #1e40af; }
+    .tx-status-completed { background: #d1fae5; color: #065f46; }
+    .tx-status-pending { background: #fef3c7; color: #92400e; }
+    .tx-status-rejected { background: #fee2e2; color: #991b1b; }
+    .tx-status-cancelled { background: #e2e8f0; color: #475569; }
+    .tx-amt-pos { color: #16a34a; }
+    .tx-amt-neg { color: #dc2626; }
+
+    [data-theme="dark"] #dashboard table.data tbody tr,
+    [data-theme="dark"] #dashboard #transactionsBody tr,
+    [data-theme="dark"] #dashboard #recentTransactionsBody tr,
+    [data-theme="dark"] .tx-row {
+      background: transparent !important;
+      border-color: #1e293b !important;
+    }
+    [data-theme="dark"] #dashboard table thead th {
+      color: #94a3b8 !important;
+      background: transparent !important;
+    }
+    [data-theme="dark"] .tx-cell,
+    [data-theme="dark"] #transactionsBody td,
+    [data-theme="dark"] #recentTransactionsBody td {
+      color: #e2e8f0 !important;
+      background: transparent !important;
+    }
+    [data-theme="dark"] .tx-type-deposit { background: #064e3b !important; color: #6ee7b7 !important; }
+    [data-theme="dark"] .tx-type-withdrawal { background: #7f1d1d !important; color: #fca5a5 !important; }
+    [data-theme="dark"] .tx-type-adjustment { background: #1e3a8a !important; color: #93c5fd !important; }
+    [data-theme="dark"] .tx-status-completed { background: #064e3b !important; color: #6ee7b7 !important; }
+    [data-theme="dark"] .tx-status-pending { background: #78350f !important; color: #fde68a !important; }
+    [data-theme="dark"] .tx-status-rejected { background: #7f1d1d !important; color: #fca5a5 !important; }
+    [data-theme="dark"] .tx-status-cancelled { background: #334155 !important; color: #cbd5e1 !important; }
+    [data-theme="dark"] .tx-amt-pos { color: #4ade80 !important; }
+    [data-theme="dark"] .tx-amt-neg { color: #f87171 !important; }
+    [data-theme="dark"] #dashboard .hover\:bg-gray-50:hover,
+    [data-theme="dark"] .tx-row:hover {
+      background: rgba(30, 41, 59, 0.8) !important;
+    }
+    /* Auth forms stay readable on dark page shell */
+    [data-theme="dark"] #page-login .bg-white,
+    [data-theme="dark"] #page-register .bg-white,
+    [data-theme="dark"] #page-verify .bg-white,
+    [data-theme="dark"] #page-forgot .bg-white {
+      background: #ffffff !important;
+      color: #0f172a !important;
+    }
+    [data-theme="dark"] #page-login label,
+    [data-theme="dark"] #page-register label,
+    [data-theme="dark"] #page-verify label,
+    [data-theme="dark"] #page-forgot label,
+    [data-theme="dark"] #page-login h1,
+    [data-theme="dark"] #page-register h1,
+    [data-theme="dark"] #page-verify h1 {
+      color: #0f172a !important;
+    }
+    [data-theme="dark"] #page-login input,
+    [data-theme="dark"] #page-register input,
+    [data-theme="dark"] #page-register select,
+    [data-theme="dark"] #page-verify input,
+    [data-theme="dark"] #page-forgot input {
+      background: #f8fafc !important;
+      color: #0f172a !important;
+      border-color: #e2e8f0 !important;
+    }
+
+  
+    [data-theme="dark"] #dashboard .text-green-600 { color: #4ade80 !important; }
+    [data-theme="dark"] #dashboard .text-red-600 { color: #f87171 !important; }
+    [data-theme="dark"] #dashboard .text-emerald-600 { color: #34d399 !important; }
+    [data-theme="dark"] #overviewBalanceBig { color: #f8fafc !important; }
+
+  </style>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript" src="https://files.coinmarketcap.com/static/widget/currency.js"></script>
   <script src="site-config.js"></script>
@@ -2285,24 +2366,16 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       filtered.sort((a,b) => (a.date < b.date ? 1 : -1));
       const renderRows = (data) => {
         return data.map(t => {
-          const amountStr = (t.amount >= 0 ? '+' : '') + '$' + t.amount.toFixed(2);
-          const amountClass = t.amount >= 0 ? 'text-green-600' : 'text-red-600';
-          const typeClass = {
-            'Deposit': 'bg-green-100 text-green-700',
-            'Withdrawal': 'bg-red-100 text-red-700',
-            'Adjustment': 'bg-blue-100 text-blue-700'
-          }[t.type] || 'bg-gray-100 text-gray-700';
-          const statusClass = {
-            'Completed': 'bg-green-100 text-green-700',
-            'Pending': 'bg-yellow-100 text-yellow-700',
-            'Rejected': 'bg-red-100 text-red-700'
-          }[t.status] || 'bg-gray-100 text-gray-700';
-          return `<tr class="hover:bg-gray-50">
-            <td class="px-5 py-3">${t.date}</td>
-            <td class="px-5 py-3"><span class="px-2 py-0.5 rounded text-xs ${typeClass}">${t.type}</span></td>
-            <td class="px-5 py-3">${t.desc}</td>
+          const amountStr = (t.amount >= 0 ? '+' : '') + '$' + Number(t.amount).toFixed(2);
+          const amountClass = t.amount >= 0 ? 'tx-amt-pos' : 'tx-amt-neg';
+          const typeKey = String(t.type || 'other').toLowerCase();
+          const statusKey = String(t.status || 'other').toLowerCase();
+          return `<tr class="tx-row">
+            <td class="px-5 py-3 tx-cell">${t.date || '—'}</td>
+            <td class="px-5 py-3"><span class="tx-badge tx-type-${typeKey}">${t.type || '—'}</span></td>
+            <td class="px-5 py-3 tx-cell break-all">${t.desc || '—'}</td>
             <td class="px-5 py-3 text-right font-medium ${amountClass}">${amountStr}</td>
-            <td class="px-5 py-3 text-right"><span class="px-2 py-0.5 rounded text-xs ${statusClass}">${t.status}</span></td>
+            <td class="px-5 py-3 text-right"><span class="tx-badge tx-status-${statusKey}">${t.status || '—'}</span></td>
           </tr>`;
         }).join('');
       };
