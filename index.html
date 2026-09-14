@@ -1540,24 +1540,36 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
                 <i class="fas fa-envelope-open-text text-amber-600 text-xl"></i>
               </div>
               <h1 class="text-2xl font-bold text-navy-900">Verify your email</h1>
-              <p class="text-gray-500 text-sm mt-2 leading-relaxed">Enter the 6-digit code from signup<br>
+              <p class="text-gray-500 text-sm mt-2 leading-relaxed">We sent a 6-digit code to<br>
                 <strong id="verifyEmailDisplay" class="text-navy-900">your email</strong>
               </p>
             </div>
+
+            <div class="mb-5 p-3 rounded-xl bg-slate-50 border border-slate-100 text-center">
+              <p class="text-xs text-slate-600 leading-relaxed">Please wait up to <strong>3 minutes</strong> for the code. Check <strong>Inbox</strong> and <strong>Spam/Junk</strong>.</p>
+              <p id="verifyCountdownText" class="mt-2 text-sm font-semibold text-navy-900">Time remaining: <span id="verifyCountdown">3:00</span></p>
+              <p id="verifyCountdownDone" class="mt-2 text-sm text-amber-700 hidden">Still no email? Click <strong>Resend code</strong> below.</p>
+            </div>
+
             <form onsubmit="submitEmailVerifyPage(event); return false;" class="space-y-4">
               <div>
                 <label class="block text-sm font-medium mb-1.5 text-gray-700">Verification code</label>
                 <input type="text" id="verifyCodeInputPage" maxlength="6" inputmode="numeric" required
                   placeholder="6-digit code" autocomplete="one-time-code"
-                  class="w-full border border-gray-200 rounded-xl px-4 py-3.5 text-center text-lg tracking-[0.35em] font-mono focus:outline-none focus:ring-2 focus:ring-gold-500 focus:border-transparent" />
+                  class="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg tracking-[0.4em] font-semibold focus:outline-none focus:ring-2 focus:ring-gold-500 focus:border-transparent" />
               </div>
-              <button type="submit" class="w-full py-3.5 rounded-xl bg-navy-900 text-white font-semibold hover:bg-navy-800 transition">
+              <button type="submit" class="w-full bg-navy-900 text-white py-3.5 rounded-xl font-semibold hover:bg-navy-800 transition">
                 Verify &amp; continue
               </button>
-              <p class="text-center text-sm text-gray-500">
-                <a href="#" onclick="showPage('login'); return false;" class="text-gold-600 font-medium hover:underline">Back to login</a>
-              </p>
             </form>
+
+            <div class="mt-4 text-center space-y-2">
+              <button type="button" id="btnResendCode" onclick="resendVerificationCode()" class="text-sm font-semibold text-gold-600 hover:text-gold-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                Resend code
+              </button>
+              <p id="resendStatus" class="text-xs text-slate-500 min-h-[1rem]"></p>
+              <button type="button" onclick="showPage('login')" class="block w-full text-sm text-gold-600 hover:text-gold-500 mt-2">Back to login</button>
+            </div>
           </div>
         </div>
       </section>
@@ -2657,6 +2669,105 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
 
 
     
+    
+    var verifyCountdownTimer = null;
+    var verifyResendCooldown = null;
+
+    function formatMmSs(totalSec) {
+      var m = Math.floor(totalSec / 60);
+      var s = totalSec % 60;
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function startVerifyCountdown(seconds) {
+      seconds = typeof seconds === 'number' ? seconds : 180;
+      if (verifyCountdownTimer) clearInterval(verifyCountdownTimer);
+      var left = seconds;
+      var el = document.getElementById('verifyCountdown');
+      var done = document.getElementById('verifyCountdownDone');
+      var text = document.getElementById('verifyCountdownText');
+      if (done) done.classList.add('hidden');
+      if (text) text.classList.remove('hidden');
+      if (el) el.textContent = formatMmSs(left);
+      verifyCountdownTimer = setInterval(function () {
+        left -= 1;
+        if (el) el.textContent = formatMmSs(Math.max(0, left));
+        if (left <= 0) {
+          clearInterval(verifyCountdownTimer);
+          verifyCountdownTimer = null;
+          if (text) text.classList.add('hidden');
+          if (done) done.classList.remove('hidden');
+        }
+      }, 1000);
+    }
+
+    async function resendVerificationCode() {
+      var email = (sessionStorage.getItem('lag_pending_verify') || '').trim().toLowerCase();
+      var display = document.getElementById('verifyEmailDisplay');
+      if (!email && display) email = (display.textContent || '').trim().toLowerCase();
+      if (!email || email.indexOf('@') < 1) {
+        lagNotify('No email to resend to. Please sign up again.', 'err');
+        return;
+      }
+      var btn = document.getElementById('btnResendCode');
+      var status = document.getElementById('resendStatus');
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = 'Sending a new code…';
+
+      var code = String(Math.floor(100000 + Math.random() * 900000));
+      sessionStorage.setItem('lag_pending_verify', email);
+      sessionStorage.setItem('lag_pending_code', code);
+
+      try {
+        var users = {};
+        try { users = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) {}
+        if (users[email]) {
+          users[email].verifyCode = code;
+          users[email].emailVerified = false;
+          localStorage.setItem('lag_users', JSON.stringify(users));
+          try { if (window.LAG) await LAG.setUser(email, users[email]); } catch (e) {}
+          try { if (typeof syncUserToCloud === 'function') await syncUserToCloud(users[email]); } catch (e) {}
+        }
+      } catch (e) { console.warn(e); }
+
+      var mailed = false;
+      var reason = '';
+      try {
+        var first = email.split('@')[0];
+        var result = await sendVerificationEmail(email, code, first);
+        mailed = !!(result && result.ok);
+        reason = (result && result.reason) || '';
+      } catch (err) {
+        reason = String(err && err.message || err);
+      }
+
+      startVerifyCountdown(180);
+      if (mailed) {
+        if (status) status.textContent = 'New code sent. Check Inbox and Spam (up to 3 minutes).';
+        lagNotify('Verification code resent. Check your email.', 'ok');
+      } else {
+        if (status) status.textContent = 'Email send failed. Your new code: ' + code;
+        await lagAlert('Could not send email (' + (reason || 'unavailable') + ').\\n\\nYour new verification code is:\\n' + code + '\\n\\nEnter it above.', 'info', 'Code ready');
+      }
+
+      // cooldown 60s on button
+      var cool = 60;
+      if (verifyResendCooldown) clearInterval(verifyResendCooldown);
+      if (btn) btn.textContent = 'Resend in ' + cool + 's';
+      verifyResendCooldown = setInterval(function () {
+        cool -= 1;
+        if (btn) btn.textContent = cool > 0 ? ('Resend in ' + cool + 's') : 'Resend code';
+        if (cool <= 0) {
+          clearInterval(verifyResendCooldown);
+          verifyResendCooldown = null;
+          if (btn) btn.disabled = false;
+        }
+      }, 1000);
+    }
+    window.resendVerificationCode = resendVerificationCode;
+    window.startVerifyCountdown = startVerifyCountdown;
+
+
     async function submitEmailVerifyPage(e) {
       if (e) e.preventDefault();
       const email = (sessionStorage.getItem('lag_pending_verify') || (document.getElementById('verifyEmailDisplay') && document.getElementById('verifyEmailDisplay').textContent) || '').trim().toLowerCase();
@@ -3172,7 +3283,8 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         setTimeout(function() {
           var input = document.getElementById('verifyCodeInputPage');
           if (input) input.focus();
-        }, 100);
+          if (typeof startVerifyCountdown === 'function') startVerifyCountdown(180);
+        }, 80);
       }
     }
     function toggleMobileMenu() {
