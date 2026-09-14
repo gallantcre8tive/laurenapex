@@ -1514,7 +1514,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
               <div>
                 <label class="block text-sm font-medium mb-1 text-gray-700">Captcha</label>
                 <div class="flex items-center gap-3">
-                  <div id="captchaBox" class="flex-1 font-bold text-xl text-center py-3 rounded-xl select-none" style="letter-spacing:0.35em;background:#0a1628;color:#e8b923;min-height:48px;line-height:1.5;">----</div>
+                  <div id="captchaBox" class="flex-1 font-bold text-xl text-center rounded-xl select-none" style="letter-spacing:0.35em;background:#0a1628;color:#e8b923;min-height:48px;line-height:48px;min-width:140px;">LOADING</div>
                   <button type="button" onclick="refreshCaptcha()" class="p-3 border border-gray-200 rounded-xl hover:bg-gray-50" title="Refresh">
                     <i class="fas fa-sync-alt text-gray-600"></i>
                   </button>
@@ -3532,13 +3532,19 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     function refreshCaptcha() {
       var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       captchaCode = '';
-      for (var i = 0; i < 5; i++) captchaCode += chars[Math.floor(Math.random() * chars.length)];
+      for (var i = 0; i < 5; i++) captchaCode += chars.charAt(Math.floor(Math.random() * chars.length));
       var box = document.getElementById('captchaBox');
       if (box) {
         box.textContent = captchaCode;
-        box.style.color = '#e8b923';
-        box.style.background = '#0a1628';
+        box.innerHTML = '';
+        box.appendChild(document.createTextNode(captchaCode));
+        box.style.cssText = 'flex:1;min-width:120px;min-height:48px;line-height:48px;text-align:center;font-weight:700;font-size:1.25rem;letter-spacing:0.35em;background:#0a1628;color:#e8b923;border-radius:0.75rem;user-select:none;';
+        box.setAttribute('aria-label', 'Captcha code ' + captchaCode);
+      } else {
+        console.warn('[captcha] captchaBox not found');
       }
+      var disp = document.getElementById('captchaDisplay');
+      if (disp) disp.textContent = captchaCode;
       return captchaCode;
     }
     function syncPhoneCode() {
