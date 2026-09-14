@@ -901,6 +901,14 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
             <label class="block text-[11px] font-semibold text-slate-500 mb-1">Active Positions ($)</label>
             <input type="number" id="modalActivePos" step="0.01" class="input" />
           </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Welcome / Signup Bonus ($)</label>
+            <div class="flex flex-wrap gap-2 items-center">
+              <input type="number" id="modalWelcomeBonus" step="0.01" class="input flex-1 min-w-[120px]" placeholder="0" />
+              <button type="button" id="btnCreditBonus1000" class="btn btn-dark text-xs whitespace-nowrap">Credit $1,000 bonus</button>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-1">Credits $1,000 to total assets, equity, withdrawable, and sets welcome bonus.</p>
+          </div>
         </div>
         <div class="border-t border-slate-100 pt-3">
           <p class="text-xs font-semibold text-navy-900 mb-2">Quick P&amp;L adjustment</p>
@@ -1257,6 +1265,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     $('modalInvested').value = data.investedCapital || 0;
     $('modalWithdrawable').value = data.withdrawable != null ? data.withdrawable : 0;
     $('modalActivePos').value = data.activePositions != null ? data.activePositions : 0;
+    if ($('modalWelcomeBonus')) $('modalWelcomeBonus').value = data.welcomeBonus != null ? data.welcomeBonus : 0;
     $('modalAdjAmount').value = '';
     $('modalAdjDesc').value = '';
     $('modalHoldings').value = data.holdings && data.holdings.length ? JSON.stringify(data.holdings, null, 2) : '';
@@ -1330,6 +1339,23 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     await loadDashboard();
     lagNotify('Saved.', 'info');
   });
+
+  
+  var bonusBtn = $('btnCreditBonus1000');
+  if (bonusBtn) {
+    bonusBtn.addEventListener('click', function () {
+      var cur = parseFloat(($('modalWelcomeBonus') || {}).value) || 0;
+      var add = 1000;
+      if ($('modalWelcomeBonus')) $('modalWelcomeBonus').value = cur + add;
+      var ta = parseFloat(($('modalTotalAssets') || {}).value) || 0;
+      var eq = parseFloat(($('modalEquity') || {}).value) || 0;
+      var wd = parseFloat(($('modalWithdrawable') || {}).value) || 0;
+      if ($('modalTotalAssets')) $('modalTotalAssets').value = ta + add;
+      if ($('modalEquity')) $('modalEquity').value = eq + add;
+      if ($('modalWithdrawable')) $('modalWithdrawable').value = wd + add;
+      lagNotify('$1,000 bonus applied to form — click Save to confirm', 'ok');
+    });
+  }
 
   $('btnDeleteUser').addEventListener('click', async function () {
     const email = currentModalUser;

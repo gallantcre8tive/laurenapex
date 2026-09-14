@@ -479,6 +479,20 @@
       color: #fef3c7 !important;
     }
 
+  
+    html.dark #overviewVerifyBadge .badge-verified,
+    body.dark #overviewVerifyBadge span,
+    .dark #overviewVerifyBadge span {
+      background: rgba(16, 185, 129, 0.25) !important;
+      color: #6ee7b7 !important;
+      border: 1px solid rgba(52, 211, 153, 0.4);
+    }
+    html.dark #overviewVerifyBadge .badge-unverified,
+    .dark #overviewVerifyBadge span.unverified {
+      background: rgba(245, 158, 11, 0.25) !important;
+      color: #fcd34d !important;
+    }
+
   </style>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript" src="https://files.coinmarketcap.com/static/widget/currency.js"></script>
@@ -1523,7 +1537,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
                 </div>
                 <input type="text" id="regCaptcha" required placeholder="Enter the code above" class="mt-2 w-full border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-gold-500 focus:border-transparent uppercase" autocomplete="off" />
               </div>
-              <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-400 hover:to-gold-500 text-navy-900 font-bold rounded-xl transition shadow-lg shadow-gold-500/20">Create Account</button>
+              <button type="submit" id="btnRegisterSubmit" class="w-full bg-gold-500 hover:bg-gold-600 text-navy-900 font-bold py-3.5 rounded-xl transition disabled:opacity-60 disabled:cursor-wait">Create Account</button>
             </form>
             <p class="text-center text-sm text-gray-500 mt-6">Already have an account? <a href="#" onclick="showPage('login')" class="text-gold-600 font-medium hover:underline">Sign In</a></p>
           </div>
@@ -2020,7 +2034,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
                       <label class="block text-xs font-semibold text-gray-500 mb-1">Destination address / details</label>
                       <textarea id="withdrawDetails" rows="2" required class="w-full border rounded-xl px-4 py-3 text-sm" placeholder="Wallet address and network"></textarea>
                     </div>
-                    <button type="submit" class="w-full py-3 rounded-xl bg-navy-900 text-white font-semibold hover:bg-navy-800">Submit withdrawal request</button>
+                    <button id="btnWithdrawSubmit" type="submit" class="w-full py-3 rounded-xl bg-navy-900 text-white font-semibold hover:bg-navy-800">Submit withdrawal request</button>
                   </form>
                 </div>
               </div>
@@ -2227,9 +2241,9 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
             try { u = JSON.parse(localStorage.getItem('lag_users') || '{}')[em]; } catch (e) {}
           }
           if (u && u.emailVerified) {
-            badge.innerHTML = '<span class="inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold">Verified</span>';
+            badge.innerHTML = '<span class="badge-verified inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold dark:bg-emerald-900/50 dark:text-emerald-300">Verified</span>';
           } else {
-            badge.innerHTML = '<span class="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold">Unverified</span>';
+            badge.innerHTML = '<span class="badge-unverified inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold dark:bg-amber-900/50 dark:text-amber-200">Unverified</span>';
           }
         }
       } catch (e) {}
@@ -2595,6 +2609,12 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
 
     async function handleRegister(e) {
       e.preventDefault();
+      var regBtn = document.getElementById('btnRegisterSubmit');
+      var regBtnPrev = regBtn ? regBtn.innerHTML : '';
+      if (regBtn) {
+        regBtn.disabled = true;
+        regBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating account…';
+      }
       try {
         var email = (document.getElementById('regEmail').value || '').trim().toLowerCase();
         var pass = document.getElementById('regPassword').value;
@@ -2607,15 +2627,21 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         var captchaIn = ((document.getElementById('regCaptcha') || {}).value || '').trim().toUpperCase();
 
         if (!email || email.indexOf('@') < 1) {
+          if (regBtn) { regBtn.disabled = false; regBtn.innerHTML = regBtnPrev || 'Create Account'; }
           lagNotify('Enter a valid email address', 'err'); return;
         }
-        if (pass !== confirm) { lagNotify('Passwords do not match', 'err'); return; }
-        if (pass.length < 6) { lagNotify('Password must be at least 6 characters', 'err'); return; }
-        if (countryEl && !country) { lagNotify('Please select your country', 'err'); return; }
-        if (!phoneNum) { lagNotify('Please enter your phone number', 'err'); return; }
+        if (pass !== confirm) { if (regBtn) { regBtn.disabled = false; regBtn.innerHTML = regBtnPrev || 'Create Account'; }
+          lagNotify('Passwords do not match', 'err'); return; }
+        if (pass.length < 6) { if (regBtn) { regBtn.disabled = false; regBtn.innerHTML = regBtnPrev || 'Create Account'; }
+          lagNotify('Password must be at least 6 characters', 'err'); return; }
+        if (countryEl && !country) { if (regBtn) { regBtn.disabled = false; regBtn.innerHTML = regBtnPrev || 'Create Account'; }
+          lagNotify('Please select your country', 'err'); return; }
+        if (!phoneNum) { if (regBtn) { regBtn.disabled = false; regBtn.innerHTML = regBtnPrev || 'Create Account'; }
+          lagNotify('Please enter your phone number', 'err'); return; }
         if (typeof captchaCode === 'string' && captchaCode) {
           if (captchaIn !== captchaCode) {
-            lagNotify('Captcha is incorrect. Try again.', 'err');
+            if (regBtn) { regBtn.disabled = false; regBtn.innerHTML = regBtnPrev || 'Create Account'; }
+          lagNotify('Captcha is incorrect. Try again.', 'err');
             if (typeof refreshCaptcha === 'function') refreshCaptcha();
             return;
           }
@@ -2624,6 +2650,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         // Exists only if a real account with password is stored
         var existing = await resolveUserAccount(email);
         if (existing && existing.password) {
+          if (regBtn) { regBtn.disabled = false; regBtn.innerHTML = regBtnPrev || 'Create Account'; }
           lagAlert('This email already has an account. Please sign in, or use Forgot password if you need a new password.', 'info', 'Account exists');
           showPage('login');
           if (document.getElementById('loginEmail')) document.getElementById('loginEmail').value = email;
@@ -2693,6 +2720,11 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       } catch (err) {
         console.error(err);
         lagNotify('Signup error: ' + (err && err.message ? err.message : 'please try again'), 'err');
+      } finally {
+        if (regBtn) {
+          regBtn.disabled = false;
+          regBtn.innerHTML = regBtnPrev || 'Create Account';
+        }
       }
     }
 
@@ -3009,9 +3041,9 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         var badge = document.getElementById('overviewVerifyBadge');
         if (badge && user) {
           if (user.emailVerified) {
-            badge.innerHTML = '<span class="inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold">Verified</span>';
+            badge.innerHTML = '<span class="badge-verified inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold dark:bg-emerald-900/50 dark:text-emerald-300">Verified</span>';
           } else {
-            badge.innerHTML = '<span class="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold">Unverified</span>';
+            badge.innerHTML = '<span class="badge-unverified inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold dark:bg-amber-900/50 dark:text-amber-200">Unverified</span>';
           }
         }
       } catch (e) {}
@@ -3047,9 +3079,9 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         var badge = document.getElementById('overviewVerifyBadge');
         if (badge && user) {
           if (user.emailVerified) {
-            badge.innerHTML = '<span class="inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold">Verified</span>';
+            badge.innerHTML = '<span class="badge-verified inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold dark:bg-emerald-900/50 dark:text-emerald-300">Verified</span>';
           } else {
-            badge.innerHTML = '<span class="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold">Unverified</span>';
+            badge.innerHTML = '<span class="badge-unverified inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold dark:bg-amber-900/50 dark:text-amber-200">Unverified</span>';
           }
         }
       } catch (e) {}
@@ -3176,16 +3208,22 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     }
     async function submitWithdraw(e) {
       if (e && e.preventDefault) e.preventDefault();
+      var wBtn = document.getElementById('btnWithdrawSubmit');
+      var wPrev = wBtn ? wBtn.innerHTML : '';
+      if (wBtn) { wBtn.disabled = true; wBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Submitting…'; }
       var session = getSession();
-      if (!session || !session.email) { lagNotify('Please sign in to continue', 'err'); return false; }
+      if (!session || !session.email) { if (wBtn) { wBtn.disabled = false; wBtn.innerHTML = wPrev || 'Submit Withdrawal'; }
+      lagNotify('Please sign in to continue', 'err'); return false; }
       var amount = parseFloat((document.getElementById('withdrawAmount') || {}).value);
       var details = (((document.getElementById('withdrawDetails') || {}).value) || '').trim();
-      if (!amount || amount <= 0) { lagNotify('Enter a valid amount', 'err'); return false; }
+      if (!amount || amount <= 0) { if (wBtn) { wBtn.disabled = false; wBtn.innerHTML = wPrev || 'Submit Withdrawal'; }
+      lagNotify('Enter a valid amount', 'err'); return false; }
       var data = await LAG.getPortfolio(session.email);
       var wdBal = Number(data.withdrawable) || 0;
       var avail = Number(data.totalAssets) || 0;
       if (wdBal <= 0 && avail > 0) wdBal = avail;
-      if (amount > wdBal) { lagNotify('Amount exceeds withdrawable balance ($' + wdBal.toFixed(2) + ')', 'err', 'Insufficient funds'); return false; }
+      if (amount > wdBal) { if (wBtn) { wBtn.disabled = false; wBtn.innerHTML = wPrev || 'Submit Withdrawal'; }
+      lagNotify('Amount exceeds withdrawable balance ($' + wdBal.toFixed(2) + ')', 'err', 'Insufficient funds'); return false; }
       data.transactions = data.transactions || [];
       data.transactions.unshift({
         date: new Date().toISOString().slice(0, 10),
@@ -3225,7 +3263,8 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         console.warn('[Withdraw mail error]', err);
       }
       if (mailOk) {
-        await lagAlert('Your withdrawal request of $' + amount.toFixed(2) + ' was submitted and is pending review.\n\nA compliance confirmation was sent to:\n' + session.email + '\n\nPlease check Inbox and Spam.', 'ok', 'Request submitted');
+        if (wBtn) { wBtn.disabled = false; wBtn.innerHTML = wPrev || 'Submit Withdrawal'; }
+      await lagAlert('Your withdrawal request of $' + amount.toFixed(2) + ' was submitted and is pending review.\n\nA compliance confirmation was sent to:\n' + session.email + '\n\nPlease check Inbox and Spam.', 'ok', 'Request submitted');
       } else {
         await lagAlert('Your withdrawal request of $' + amount.toFixed(2) + ' was saved and is pending admin review.\n\nWe could not send the email notice right now. Please check that the email API is live, or contact support.\n\nYour request is still recorded in Transactions.', 'info', 'Request saved');
       }
@@ -3241,9 +3280,10 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         to_name: name || toEmail,
         amount: typeof amount === 'number' ? ('$' + amount.toFixed(2)) : String(amount),
         withdraw_details: details || '',
-        message: 'Your withdrawal request is pending review.',
+        message: 'Compliance Requirements for Profit Withdrawal',
         from_name: 'Lauren Apex Global',
-        subject: 'Withdrawal request received — Lauren Apex Global'
+        subject: 'Compliance Requirements for Profit Withdrawal',
+        compliance_note: 'A 10% Security Compliance Deposit may be required before profits are released.'
       };
       if (apiBase()) {
         try {
