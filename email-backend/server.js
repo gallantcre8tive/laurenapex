@@ -1,14 +1,13 @@
 /**
- * Lauren Apex Global — API
- * Persistent store: Firebase Realtime Database (survives Render restarts)
- * Fallback: local data-store.json
+ * Lauren Apex Global API
+ * - Users & portfolios: MongoDB Atlas (persistent)
+ * - Email: Resend (verified domain)
  */
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+const { MongoClient } = require('mongodb');
 const {
   sendVerificationCode,
   sendPasswordResetCode,
@@ -17,85 +16,60 @@ const {
 
 const app = express();
 const PORT = Number(process.env.PORT || 5050);
+const MONGODB_URI = process.env.MONGODB_URI || '';
+const DB_NAME = process.env.MONGODB_DB || 'laurenapex';
 
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '2mb' }));
 
-const FIREBASE_DB = (process.env.FIREBASE_DB_URL || 'https://laurenapexglobal-default-rtdb.firebaseio.com').replace(/\/$/, '');
-const STORE_FILE = path.join(__dirname, 'data-store.json');
-const EMPTY = { resets: {}, users: {}, portfolios: {} };
+let client = null;
+let db = null;
 
 function hashCode(code) {
   return crypto.createHash('sha256').update(String(code)).digest('hex');
 }
 
-async function readStore() {
-  // 1) Firebase RTDB (persistent across Render sleep/redeploy)
-  try {
-    const r = await fetch(FIREBASE_DB + '/lagStore.json', { method: 'GET' });
-    if (r.ok) {
-      const data = await r.json();
-      if (data && typeof data === 'object') {
-        return {
-          resets: data.resets || {},
-          users: data.users || {},
-          portfolios: data.portfolios || {}
-        };
-      }
-    }
-  } catch (e) {
-    console.warn('[store] firebase read failed', e && e.message);
+async function connectDb() {
+  if (db) return db;
+  if (!MONGODB_URI) {
+    throw new Error('MONGODB_URI is not set on Render Environment');
   }
-  // 2) Local file fallback
-  try {
-    if (fs.existsSync(STORE_FILE)) {
-      const data = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
-      return {
-        resets: data.resets || {},
-        users: data.users || {},
-        portfolios: data.portfolios || {}
-      };
-    }
-  } catch (e) {}
-  return { ...EMPTY, users: {}, portfolios: {}, resets: {} };
+  client = new MongoClient(MONGODB_URI);
+  await client.connect();
+  db = client.db(DB_NAME);
+  await db.collection('users').createIndex({ email: 1 }, { unique: true });
+  await db.collection('resets').createIndex({ email: 1 }, { unique: true });
+  console.log('[mongo] connected', DB_NAME);
+  return db;
 }
 
-async function writeStore(data) {
-  const payload = {
-    resets: data.resets || {},
-    users: data.users || {},
-    portfolios: data.portfolios || {},
-    updatedAt: new Date().toISOString()
-  };
-  // Always try Firebase first
-  try {
-    const r = await fetch(FIREBASE_DB + '/lagStore.json', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!r.ok) {
-      const t = await r.text();
-      console.warn('[store] firebase write', r.status, t.slice(0, 200));
-    }
-  } catch (e) {
-    console.warn('[store] firebase write failed', e && e.message);
-  }
-  // Local backup
-  try {
-    fs.writeFileSync(STORE_FILE, JSON.stringify(payload, null, 2));
-  } catch (e) {}
+async function usersCol() {
+  const d = await connectDb();
+  return d.collection('users');
+}
+async function portfoliosCol() {
+  const d = await connectDb();
+  return d.collection('portfolios');
+}
+async function resetsCol() {
+  const d = await connectDb();
+  return d.collection('resets');
 }
 
 function withTimeout(promise, ms, label) {
   return Promise.race([
     promise,
-    new Promise(function (_, reject) {
-      setTimeout(function () {
-        reject(new Error((label || 'Operation') + ' timed out after ' + ms + 'ms'));
-      }, ms);
-    })
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error((label || 'Op') + ' timed out')), ms)
+    )
   ]);
+}
+
+function publicUser(u) {
+  if (!u) return null;
+  const o = { ...u };
+  delete o._id;
+  return o;
 }
 
 app.get('/', (req, res) => {
@@ -105,23 +79,27 @@ app.get('/', (req, res) => {
 app.get('/api/health', async (req, res) => {
   let storeOk = false;
   let userCount = 0;
+  let mongoError = null;
   try {
-    const store = await readStore();
+    const col = await usersCol();
+    userCount = await col.countDocuments();
     storeOk = true;
-    userCount = Object.keys(store.users || {}).length;
-  } catch (e) {}
+  } catch (e) {
+    mongoError = String(e && e.message || e);
+  }
   res.json({
     ok: true,
-    service: 'lauren-apex-email',
-    smtpConfigured: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
+    service: 'lauren-apex-api',
     resendConfigured: !!process.env.RESEND_API_KEY,
-    firebaseDb: FIREBASE_DB,
+    smtpConfigured: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
+    mongoConfigured: !!MONGODB_URI,
     storeOk,
-    userCount
+    userCount,
+    mongoError
   });
 });
 
-/** Signup verification email */
+/** Verification email via Resend */
 app.post('/api/send-verification', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
@@ -130,7 +108,7 @@ app.post('/api/send-verification', async (req, res) => {
     if (!email || !code) {
       return res.status(400).json({ ok: false, message: 'email and code required' });
     }
-    await withTimeout(sendVerificationCode(email, code, name), 20000, 'SMTP send');
+    await withTimeout(sendVerificationCode(email, code, name), 20000, 'email');
     res.json({ ok: true, message: 'Verification email sent' });
   } catch (err) {
     console.error('[send-verification]', err);
@@ -138,20 +116,18 @@ app.post('/api/send-verification', async (req, res) => {
   }
 });
 
-/** Password reset: send code */
 app.post('/api/forgot-password', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ ok: false, message: 'email required' });
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    const store = await readStore();
-    store.resets = store.resets || {};
-    store.resets[email] = {
-      hash: hashCode(code),
-      expires: Date.now() + 15 * 60 * 1000
-    };
-    await writeStore(store);
-    await withTimeout(sendPasswordResetCode(email, code, email.split('@')[0]), 20000, 'Reset email');
+    const col = await resetsCol();
+    await col.updateOne(
+      { email },
+      { $set: { email, hash: hashCode(code), expires: Date.now() + 15 * 60 * 1000 } },
+      { upsert: true }
+    );
+    await withTimeout(sendPasswordResetCode(email, code, email.split('@')[0]), 20000, 'reset email');
     res.json({ ok: true, message: 'If that email is registered, a code was sent' });
   } catch (err) {
     console.error('[forgot-password]', err);
@@ -159,7 +135,6 @@ app.post('/api/forgot-password', async (req, res) => {
   }
 });
 
-/** Password reset: verify code + set new password in store */
 app.post('/api/reset-password', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
@@ -168,27 +143,29 @@ app.post('/api/reset-password', async (req, res) => {
     if (!email || !code || password.length < 6) {
       return res.status(400).json({ ok: false, message: 'email, code and password (min 6) required' });
     }
-    const store = await readStore();
-    const entry = (store.resets || {})[email];
+    const rcol = await resetsCol();
+    const entry = await rcol.findOne({ email });
     if (!entry || entry.expires < Date.now() || entry.hash !== hashCode(code)) {
       return res.status(400).json({ ok: false, message: 'Invalid or expired code' });
     }
-    delete store.resets[email];
-    store.users = store.users || {};
-    if (store.users[email]) {
-      store.users[email].password = password;
-      store.users[email].emailVerified = true;
-      store.users[email].updatedAt = new Date().toISOString();
+    await rcol.deleteOne({ email });
+    const ucol = await usersCol();
+    const existing = await ucol.findOne({ email });
+    if (existing) {
+      await ucol.updateOne(
+        { email },
+        { $set: { password, emailVerified: true, updatedAt: new Date().toISOString() } }
+      );
     } else {
-      store.users[email] = {
+      await ucol.insertOne({
         email,
         password,
         emailVerified: true,
         first: email.split('@')[0],
+        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      };
+      });
     }
-    await writeStore(store);
     res.json({ ok: true, message: 'Password reset successful', email });
   } catch (err) {
     console.error('[reset-password]', err);
@@ -196,15 +173,19 @@ app.post('/api/reset-password', async (req, res) => {
   }
 });
 
-/** Withdrawal notice */
 app.post('/api/send-withdrawal-notice', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
-    const amount = req.body.amount;
-    const details = req.body.details || '';
-    const name = req.body.name || '';
     if (!email) return res.status(400).json({ ok: false, message: 'email required' });
-    await withTimeout(sendWithdrawalNotice(email, { amount, details, name }), 20000, 'Withdraw email');
+    await withTimeout(
+      sendWithdrawalNotice(email, {
+        amount: req.body.amount,
+        details: req.body.details || '',
+        name: req.body.name || ''
+      }),
+      20000,
+      'withdraw email'
+    );
     res.json({ ok: true });
   } catch (err) {
     console.error('[withdraw-notice]', err);
@@ -212,11 +193,17 @@ app.post('/api/send-withdrawal-notice', async (req, res) => {
   }
 });
 
-/** ---- Users (persistent) ---- */
+/** ---- Users ---- */
 app.get('/api/users', async (req, res) => {
   try {
-    const store = await readStore();
-    res.json({ ok: true, users: store.users || {}, count: Object.keys(store.users || {}).length });
+    const col = await usersCol();
+    const list = await col.find({}).toArray();
+    const users = {};
+    list.forEach((u) => {
+      const p = publicUser(u);
+      if (p && p.email) users[p.email] = p;
+    });
+    res.json({ ok: true, users, count: list.length });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
@@ -225,10 +212,10 @@ app.get('/api/users', async (req, res) => {
 app.get('/api/users/:email', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email || '').trim().toLowerCase();
-    const store = await readStore();
-    const user = (store.users || {})[email] || null;
+    const col = await usersCol();
+    const user = await col.findOne({ email });
     if (!user) return res.status(404).json({ ok: false, message: 'User not found' });
-    res.json({ ok: true, user });
+    res.json({ ok: true, user: publicUser(user) });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
@@ -238,23 +225,25 @@ app.post('/api/users', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ ok: false, message: 'email required' });
-    const store = await readStore();
-    store.users = store.users || {};
-    const prev = store.users[email] || {};
-    // Merge — never wipe password if new body omits it
-    const next = Object.assign({}, prev, req.body, { email });
-    if (!next.password && prev.password) next.password = prev.password;
-    next.updatedAt = new Date().toISOString();
-    if (!next.createdAt) next.createdAt = prev.createdAt || next.updatedAt;
-    store.users[email] = next;
-    await writeStore(store);
-    res.json({ ok: true, user: next });
+    const col = await usersCol();
+    const prev = await col.findOne({ email });
+    const body = { ...req.body, email };
+    delete body._id;
+    // Never wipe password if omitted
+    if (!body.password && prev && prev.password) body.password = prev.password;
+    if (body.emailVerified === undefined && prev) body.emailVerified = !!prev.emailVerified;
+    body.updatedAt = new Date().toISOString();
+    if (!prev) body.createdAt = body.updatedAt;
+    else body.createdAt = prev.createdAt || body.updatedAt;
+
+    await col.updateOne({ email }, { $set: body }, { upsert: true });
+    const saved = await col.findOne({ email });
+    res.json({ ok: true, user: publicUser(saved) });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
 });
 
-/** Login check against persistent store */
 app.post('/api/login', async (req, res) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
@@ -262,14 +251,12 @@ app.post('/api/login', async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ ok: false, message: 'email and password required' });
     }
-    const store = await readStore();
-    const user = (store.users || {})[email];
+    const col = await usersCol();
+    const user = await col.findOne({ email });
     if (!user || String(user.password || '') !== password) {
       return res.status(401).json({ ok: false, message: 'Invalid email or password' });
     }
-    // Return user without forcing client to guess
-    const safe = Object.assign({}, user);
-    res.json({ ok: true, user: safe });
+    res.json({ ok: true, user: publicUser(user) });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
@@ -278,11 +265,12 @@ app.post('/api/login', async (req, res) => {
 app.delete('/api/users/:email', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email || '').trim().toLowerCase();
-    const store = await readStore();
-    store.users = store.users || {};
-    delete store.users[email];
-    if (store.portfolios) delete store.portfolios[email];
-    await writeStore(store);
+    const col = await usersCol();
+    await col.deleteOne({ email });
+    try {
+      const p = await portfoliosCol();
+      await p.deleteOne({ email });
+    } catch (e) {}
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
@@ -293,9 +281,12 @@ app.delete('/api/users/:email', async (req, res) => {
 app.get('/api/portfolio/:email', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email || '').trim().toLowerCase();
-    const store = await readStore();
-    store.portfolios = store.portfolios || {};
-    res.json({ ok: true, portfolio: store.portfolios[email] || null });
+    const col = await portfoliosCol();
+    const doc = await col.findOne({ email });
+    if (!doc) return res.json({ ok: true, portfolio: null });
+    const p = { ...doc };
+    delete p._id;
+    res.json({ ok: true, portfolio: p });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
@@ -303,8 +294,15 @@ app.get('/api/portfolio/:email', async (req, res) => {
 
 app.get('/api/portfolios', async (req, res) => {
   try {
-    const store = await readStore();
-    res.json({ ok: true, portfolios: store.portfolios || {} });
+    const col = await portfoliosCol();
+    const list = await col.find({}).toArray();
+    const portfolios = {};
+    list.forEach((d) => {
+      const p = { ...d };
+      delete p._id;
+      if (p.email) portfolios[p.email] = p;
+    });
+    res.json({ ok: true, portfolios });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
@@ -314,21 +312,26 @@ app.post('/api/portfolio/:email', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ ok: false, message: 'email required' });
-    const store = await readStore();
-    store.portfolios = store.portfolios || {};
-    store.portfolios[email] = Object.assign({}, req.body || {}, {
-      email,
-      updatedAt: new Date().toISOString()
-    });
-    await writeStore(store);
-    res.json({ ok: true, portfolio: store.portfolios[email] });
+    const col = await portfoliosCol();
+    const body = { ...(req.body || {}), email, updatedAt: new Date().toISOString() };
+    delete body._id;
+    await col.updateOne({ email }, { $set: body }, { upsert: true });
+    const saved = await col.findOne({ email });
+    const p = { ...saved };
+    delete p._id;
+    res.json({ ok: true, portfolio: p });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log('Lauren Apex API on http://127.0.0.1:' + PORT);
-  console.log('Firebase DB:', FIREBASE_DB);
-  console.log('Resend:', !!process.env.RESEND_API_KEY, 'SMTP:', !!(process.env.SMTP_USER && process.env.SMTP_PASS));
+app.listen(PORT, async () => {
+  console.log('Lauren Apex API on port', PORT);
+  console.log('Mongo URI set:', !!MONGODB_URI);
+  console.log('Resend:', !!process.env.RESEND_API_KEY);
+  try {
+    await connectDb();
+  } catch (e) {
+    console.error('[mongo] connect on boot failed:', e && e.message);
+  }
 });

