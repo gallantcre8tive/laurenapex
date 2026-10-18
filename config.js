@@ -4,7 +4,7 @@
 // ============================================================
 window.APP_CONFIG = {
   // Local email backend (npm start in email-backend/). On production use your API URL.
-  apiBaseUrl: "https://laurenapex.onrender.com",
+  apiBaseUrl: "https://laurenapex-39rh.onrender.com",
   // Keep false so signup/admin share users in the browser (recommended).
   // Set true only when Firestore is fully set up with open rules for testing.
   enableFirebase: false,
