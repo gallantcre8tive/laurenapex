@@ -593,6 +593,21 @@
     [data-theme="dark"] #dashboard .text-emerald-600 { color: #34d399 !important; }
     [data-theme="dark"] #overviewBalanceBig { color: #f8fafc !important; }
 
+  
+    [data-theme="dark"] #portfolioTotalAssets,
+    [data-theme="dark"] #portfolioInvested,
+    [data-theme="dark"] #portfolioWithdrawable,
+    [data-theme="dark"] #portfolioEquity,
+    [data-theme="dark"] #portfolioWithdrawable,
+    [data-theme="dark"] #portfolioPnl {
+      color: #f1f5f9 !important;
+    }
+    [data-theme="dark"] #dash-portfolio .bg-gray-50 {
+      background: #1e293b !important;
+    }
+    [data-theme="dark"] #dash-portfolio h2 {
+      color: #f1f5f9 !important;
+    }
   </style>
   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script type="text/javascript" src="https://files.coinmarketcap.com/static/widget/currency.js"></script>
@@ -775,15 +790,60 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
           }
         } catch (e) {}
       }
-      var merged = Object.assign(emptyPortfolio(), cloud || {}, local || {});
-      if (cloud && local) {
+      var merged = emptyPortfolio();
+      if (!cloud && !local) {
+        try { localStorage.setItem(key, JSON.stringify(merged)); } catch (e) {}
+        return merged;
+      }
+      if (!cloud) {
+        merged = Object.assign(emptyPortfolio(), local);
+      } else if (!local) {
+        merged = Object.assign(emptyPortfolio(), cloud);
+      } else {
+        // Merge transactions (by date+type+amount+status unique-ish)
+        var txMap = {};
+        function txBaseKey(t) {
+          return [t.date, t.type, Number(t.amount), t.desc || ''].join('|');
+        }
+        function preferTx(a, b) {
+          var rank = { Completed: 3, Rejected: 2, Cancelled: 2, Pending: 1 };
+          var ra = rank[a && a.status] || 0;
+          var rb = rank[b && b.status] || 0;
+          return rb > ra ? b : a;
+        }
+        (cloud.transactions || []).forEach(function (t) {
+          var k = txBaseKey(t);
+          txMap[k] = txMap[k] ? preferTx(txMap[k], t) : t;
+        });
+        (local.transactions || []).forEach(function (t) {
+          var k = txBaseKey(t);
+          txMap[k] = txMap[k] ? preferTx(txMap[k], t) : t;
+        });
+        // Prefer cloud for money fields when cloud was updated at same time or later, OR cloud balance is higher (admin credit)
         var ct = Date.parse(cloud.updatedAt || 0) || 0;
         var lt = Date.parse(local.updatedAt || 0) || 0;
-        merged = ct >= lt ? Object.assign(emptyPortfolio(), local, cloud) : Object.assign(emptyPortfolio(), cloud, local);
+        var cloudMoney = Number(cloud.totalAssets) || 0;
+        var localMoney = Number(local.totalAssets) || 0;
+        var useCloudMoney = (ct >= lt) || (cloudMoney > localMoney);
+        var base = useCloudMoney ? Object.assign(emptyPortfolio(), local, cloud) : Object.assign(emptyPortfolio(), cloud, local);
+        if (useCloudMoney) {
+          base.totalAssets = cloud.totalAssets != null ? Number(cloud.totalAssets) : localMoney;
+          base.equity = cloud.equity != null ? Number(cloud.equity) : Number(local.equity) || 0;
+          base.investedCapital = cloud.investedCapital != null ? Number(cloud.investedCapital) : Number(local.investedCapital) || 0;
+          base.withdrawable = cloud.withdrawable != null ? Number(cloud.withdrawable) : Number(local.withdrawable) || 0;
+          base.welcomeBonus = cloud.welcomeBonus != null ? Number(cloud.welcomeBonus) : Number(local.welcomeBonus) || 0;
+          base.activePositions = cloud.activePositions != null ? Number(cloud.activePositions) : Number(local.activePositions) || 0;
+          if (cloud.holdings && cloud.holdings.length) base.holdings = cloud.holdings;
+        }
+        base.transactions = Object.keys(txMap).map(function (k) { return txMap[k]; });
+        base.transactions.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+        base.updatedAt = new Date(Math.max(ct, lt)).toISOString();
+        merged = base;
       }
       try { localStorage.setItem(key, JSON.stringify(merged)); } catch (e) {}
       return merged;
-  }
+    }
+
 
   async function savePortfolio(email, data) {
     await init();
@@ -2023,13 +2083,14 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
             </div>
           </div>
 
-          <div <div id="dash-portfolio" class="dashboard-page">
+          <div id="dash-portfolio" class="dashboard-page">
             <div class="bg-white rounded-xl border p-6 shadow-sm">
               <h2 class="text-xl font-bold text-navy-900 mb-4">Portfolio Details</h2>
               <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="p-4 bg-gray-50 rounded-lg"><p class="text-xs text-gray-500">Total Assets</p><p class="text-xl font-bold" id="portfolioTotalAssets">$0.00</p></div>
                 <div class="p-4 bg-gray-50 rounded-lg"><p class="text-xs text-gray-500">Invested Capital</p><p class="text-xl font-bold" id="portfolioInvested">$0.00</p></div>
                 <div class="p-4 bg-gray-50 rounded-lg"><p class="text-xs text-gray-500">Equity</p><p class="text-xl font-bold" id="portfolioEquity">$0.00</p></div>
+                <div class="p-4 bg-gray-50 rounded-lg"><p class="text-xs text-gray-500">Withdrawable</p><p class="text-xl font-bold text-navy-900" id="portfolioWithdrawable">$0.00</p></div>
                 <div class="p-4 bg-gray-50 rounded-lg"><p class="text-xs text-gray-500">Profit/Loss</p><p class="text-xl font-bold text-green-600" id="portfolioPnl">$0.00</p></div>
               </div>
             </div>
@@ -2313,6 +2374,11 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       setTxt('overviewPnlSmall', fmtPnl(realPnl));
       setTxt('overviewInvestedSmall', fmt(inv));
       setTxt('overviewWdSmall', fmt(wd));
+      setTxt('portfolioTotalAssets', fmt(avail));
+      setTxt('portfolioInvested', fmt(inv));
+      setTxt('portfolioWithdrawable', fmt(wd));
+      setTxt('portfolioEquity', fmt(equity));
+      setTxt('portfolioPnl', fmtPnl(realPnl));
       setTxt('dashLiveBal', fmt(avail));
       setTxt('sidebarBalance', fmt(avail));
       setTxt('depositBalanceDisplay', fmt(avail));
@@ -2679,17 +2745,33 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       var localUsers = {};
       try { localUsers = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { localUsers = {}; }
       var local = localUsers[email] || null;
-      var cloudUsers = await fetchCloudUsers();
-      var cloud = cloudUsers[email] || null;
-      // Prefer local password if both exist
+      var cloud = null;
+      // Direct single-user fetch (most reliable)
+      try {
+        var base = apiBase();
+        if (base) {
+          var r = await fetch(base + '/api/users/' + encodeURIComponent(email));
+          if (r.ok) {
+            var j = await r.json();
+            if (j && j.user) cloud = j.user;
+          }
+        }
+      } catch (e) { console.warn('[resolve user]', e); }
+      if (!cloud) {
+        try {
+          var all = await fetchCloudUsers();
+          cloud = (all && all[email]) || null;
+        } catch (e) {}
+      }
       var user = null;
-      if (local && cloud) {
-        user = Object.assign({}, cloud, local);
-        if (cloud.password && !local.password) user.password = cloud.password;
-        if (local.password) user.password = local.password;
+      if (cloud && local) {
+        // Cloud is source of truth for password (cross-device)
+        user = Object.assign({}, local, cloud);
+        if (cloud.password) user.password = cloud.password;
+        else if (local.password) user.password = local.password;
         if (cloud.emailVerified || local.emailVerified) user.emailVerified = true;
       } else {
-        user = local || cloud || null;
+        user = cloud || local || null;
       }
       if (user) {
         localUsers[email] = user;
@@ -2697,6 +2779,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
       }
       return user;
     }
+
 
 
     async function handleRegister(e) {
@@ -2993,11 +3076,38 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
           return;
         }
 
-        var user = await resolveUserAccount(email);
-        if (!user || !user.password || String(user.password) !== String(pass)) {
-          lagNotify('Invalid email or password', 'err', 'Sign in failed');
-          return;
+        var user = null;
+        // 1) Server login (persistent Firebase-backed store)
+        try {
+          var base = apiBase();
+          if (base) {
+            var r = await fetch(base + '/api/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: email, password: pass })
+            });
+            var j = await r.json().catch(function () { return {}; });
+            if (r.ok && j && j.ok && j.user) {
+              user = j.user;
+            }
+          }
+        } catch (e) { console.warn('[api login]', e); }
+
+        // 2) Fallback: local + cloud merge
+        if (!user) {
+          user = await resolveUserAccount(email);
+          if (!user || !user.password || String(user.password) !== String(pass)) {
+            lagNotify('Invalid email or password', 'err', 'Sign in failed');
+            return;
+          }
         }
+
+        // Cache locally for faster next open on this device
+        try {
+          var users = JSON.parse(localStorage.getItem('lag_users') || '{}');
+          users[email] = Object.assign({}, users[email] || {}, user, { email: email, password: pass });
+          localStorage.setItem('lag_users', JSON.stringify(users));
+        } catch (e) {}
 
         if (!user.emailVerified) {
           sessionStorage.setItem('lag_pending_verify', email);
@@ -3026,6 +3136,7 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         lagNotify('Login error: ' + (err && err.message ? err.message : 'please try again'), 'err');
       }
     }
+
 
 
     window.handleRegister = handleRegister;
@@ -3292,7 +3403,8 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
         status: 'Pending'
       });
       await LAG.savePortfolio(session.email, data);
-      lagAlert('Your deposit request was submitted and is pending review. Credit is applied after admin confirmation.', 'ok', 'Deposit submitted');
+      try { if (typeof loadPortfolioForEmail === 'function') await loadPortfolioForEmail(session.email); } catch (e) {}
+      lagAlert('Your deposit request was submitted and is pending review. Your balance updates after admin approves the deposit.', 'ok', 'Deposit submitted');
       var amt = document.getElementById('depositAmount'); if (amt) amt.value = '';
       var th = document.getElementById('depositTxHash'); if (th) th.value = '';
       showDash('transactions');

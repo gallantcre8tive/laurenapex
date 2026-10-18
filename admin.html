@@ -359,45 +359,52 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
   }
   async function getUsers() {
     await init();
-    let local = {};
-    try { local = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { local = {}; }
-    let cloud = {};
+    var cloud = {};
     try {
       var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
-      if (base && base.indexOf('127.0.0.1') === -1 && base.indexOf('localhost') === -1) {
-        var r = await fetch(base.replace(/\/$/, '') + '/api/users');
-        if (r.ok) {
-          var j = await r.json();
-          cloud = (j && j.users) || {};
-        }
+      if (!base || base.indexOf('YOUR-EMAIL-API') !== -1) {
+        base = 'https://laurenapex.onrender.com';
+      }
+      var r = await fetch(String(base).replace(/\/$/, '') + '/api/users');
+      if (r.ok) {
+        var j = await r.json();
+        cloud = (j && j.users) || {};
       }
     } catch (e) { console.warn('[admin users api]', e); }
-    // merge: local + cloud (cloud fills gaps from other devices)
-    var merged = Object.assign({}, cloud, local);
-    // prefer local emailVerified true
+    var local = {};
+    try { local = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { local = {}; }
+    // Cloud is source of truth; local only fills gaps
+    var merged = Object.assign({}, local, cloud);
     Object.keys(cloud).forEach(function (em) {
-      if (!merged[em]) merged[em] = cloud[em];
-      else {
-        merged[em] = Object.assign({}, cloud[em], local[em] || {});
-        if (cloud[em].emailVerified || (local[em] && local[em].emailVerified)) merged[em].emailVerified = true;
-      }
+      merged[em] = Object.assign({}, local[em] || {}, cloud[em]);
+      if (cloud[em].password) merged[em].password = cloud[em].password;
     });
-    if (useFirebase) {
-      try {
-        const snap = await db.collection('users').get();
-        snap.forEach(function (doc) {
-          merged[doc.id] = Object.assign({}, merged[doc.id] || {}, doc.data());
-        });
-      } catch (e) { console.warn(e); }
-    }
+    // Keep local cache in sync so refresh is fast
+    try { localStorage.setItem('lag_users', JSON.stringify(merged)); } catch (e) {}
     return merged;
   }
   async function setUser(email, data) {
     await init();
-    if (useFirebase) { await db.collection('users').doc(email).set(data, { merge: true }); return; }
-    const users = JSON.parse(localStorage.getItem('lag_users') || '{}');
-    users[email] = { ...(users[email] || {}), ...data };
-    localStorage.setItem('lag_users', JSON.stringify(users));
+    email = String(email || '').trim().toLowerCase();
+    if (!email) return;
+    if (useFirebase) {
+      try { await db.collection('users').doc(email).set(data, { merge: true }); } catch (e) { console.warn(e); }
+    }
+    var users = {};
+    try { users = JSON.parse(localStorage.getItem('lag_users') || '{}'); } catch (e) { users = {}; }
+    users[email] = Object.assign({}, users[email] || {}, data || {}, { email: email });
+    try { localStorage.setItem('lag_users', JSON.stringify(users)); } catch (e) { console.warn(e); }
+    // Keep cloud copy so other devices / admin still see user
+    try {
+      var base = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || '';
+      if (base) {
+        await fetch(base.replace(/\/$/, '') + '/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(users[email])
+        });
+      }
+    } catch (e) { console.warn('[setUser api]', e); }
   }
   async function deleteUser(email) {
     await init();
@@ -969,11 +976,14 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
   }
 
   function saveAdminConfig(cfg) {
-    localStorage.setItem(ADMIN_CFG_KEY, JSON.stringify({
-      email: (cfg.email || '').trim(),
-      password: cfg.password || DEFAULT_ADMIN_PASSWORD,
-      updatedAt: new Date().toISOString()
-    }));
+    // ONLY writes admin login credentials — never touches lag_users / portfolios
+    try {
+      localStorage.setItem(ADMIN_CFG_KEY, JSON.stringify({
+        email: (cfg.email || '').trim(),
+        password: cfg.password || DEFAULT_ADMIN_PASSWORD,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch (e) { console.warn('[admin config]', e); }
   }
 
   function preloadLoginEmail() {
@@ -1544,9 +1554,12 @@ const firebaseConfig = (window.APP_CONFIG && window.APP_CONFIG.firebase) ? windo
     saveAdminConfig({ email: email, password: next || cfg.password });
     if ($('adminEmailLogin') && email) $('adminEmailLogin').value = email;
     loadSettingsPage();
-    msg.textContent = 'Saved. Use these credentials next login.';
+    msg.textContent = 'Saved. Use these credentials next login. User list was not changed.';
     msg.className = 'text-sm text-emerald-600';
     msg.classList.remove('hidden');
+    // Re-show users so UI never looks empty after settings save
+    try { if (typeof renderUsers === 'function') renderUsers(); } catch (e) {}
+    try { if (typeof updateOverview === 'function') updateOverview(); } catch (e) {}
   });
 
   $('btnResetAdminDefault').addEventListener('click', function () {
