@@ -36,7 +36,7 @@ async function sendWithResend({ to, subject, html, text }) {
   const from =
     process.env.RESEND_FROM ||
     process.env.MAIL_FROM_EMAIL ||
-    'Lauren Apex Global <onboarding@resend.dev>';
+    'Lauren Apex Global <noreply@laurensglobalholdings.com>';
 
   const controller = new AbortController();
   const timer = setTimeout(function () { controller.abort(); }, 15000);

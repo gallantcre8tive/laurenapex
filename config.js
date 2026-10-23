@@ -8,7 +8,7 @@ window.APP_CONFIG = {
   // Keep false so signup/admin share users in the browser (recommended).
   // Set true only when Firestore is fully set up with open rules for testing.
   enableFirebase: false,
-  defaultAdminPassword: "ieb8228!iw#@9",
+  defaultAdminPassword: "147258Ab@$$$",
   defaultAdminEmail: "",
 
   firebase: {
@@ -28,7 +28,7 @@ window.APP_CONFIG = {
     btc: "bc1qmshm7w6g745hec6cym3rkc2flrc58au63l9zuz"
   },
 
-  whatsappNumber: "15186304939",
+  // whatsappNumber: "15186304939",
 
   // Optional: real Gmail verification codes via EmailJS (https://www.emailjs.com)
   // 1) Create free account → Email Service (Gmail) → Email Template with {{verification_code}} and {{to_email}}
