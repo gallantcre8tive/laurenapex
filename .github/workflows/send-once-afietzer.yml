@@ -1,0 +1,37 @@
+# ONE-TIME: sends email to Afietzer on next push to main, then DELETE this file.
+name: Send once - Afietzer notice
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send email via Resend
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          if [ -z "$RESEND_API_KEY" ]; then
+            echo "Missing GitHub secret RESEND_API_KEY"
+            exit 1
+          fi
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "from": "Lauren Apex Global <noreply@laurensglobalholdings.com>",
+              "to": ["afietzer1015@gmail.com"],
+              "subject": "Account update — balance credit & important notice",
+              "text": "Dear Afietzer,\n\nWe are writing to inform you of an important update regarding your Lauren Apex Global account.\n\nFollowing an internal review, an additional credit of $22,000.00 has been applied to your account balance. This update will be visible when you next sign in to your dashboard.\n\nPlease also note that our official WhatsApp channel is currently unavailable due to a security incident. Until further notice, do not trust any messages, payment requests, or individuals claiming to represent Lauren Apex Global on WhatsApp.\n\nAll deposits and account-related payments must be completed only through your official account on our website after you have signed in. We will never request payment through WhatsApp or any other unofficial channel.\n\nIf you did not expect this message, please contact us only through the official support options on our website.\n\nThank you for your continued trust.\n\nLauren Apex Global Support",
+              "html": "<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#0f172a;line-height:1.6\"><p>Dear Afietzer,</p><p>We are writing to inform you of an important update regarding your <strong>Lauren Apex Global</strong> account.</p><p>Following an internal review, an additional credit of <strong>$22,000.00</strong> has been applied to your account balance. This update will be visible when you next sign in to your dashboard.</p><p>Please also note that our official WhatsApp channel is currently unavailable due to a security incident. Until further notice, do not trust any messages, payment requests, or individuals claiming to represent Lauren Apex Global on WhatsApp.</p><p>All deposits and account-related payments must be completed only through your official account on our website after you have signed in. We will never request payment through WhatsApp or any other unofficial channel.</p><p>If you did not expect this message, please contact us only through the official support options on our website.</p><p>Thank you for your continued trust.</p><p><strong>Lauren Apex Global Support</strong></p></div>"
+            }')
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          CODE=$(echo "$RESPONSE" | tail -n 1)
+          echo "HTTP $CODE"
+          echo "$BODY"
+          if [ "$CODE" != "200" ] && [ "$CODE" != "201" ]; then
+            exit 1
+          fi
+          echo "Sent OK to afietzer1015@gmail.com"
