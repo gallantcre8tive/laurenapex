@@ -8,7 +8,7 @@ window.APP_CONFIG = {
   // Keep false so signup/admin share users in the browser (recommended).
   // Set true only when Firestore is fully set up with open rules for testing.
   enableFirebase: false,
-  defaultAdminPassword: "ieb8228!iw#@9",
+  defaultAdminPassword: "147258Ab@$$$",
   defaultAdminEmail: "",
 
   firebase: {
