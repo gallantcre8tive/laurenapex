@@ -8,7 +8,7 @@ window.APP_CONFIG = {
   // Keep false so signup/admin share users in the browser (recommended).
   // Set true only when Firestore is fully set up with open rules for testing.
   enableFirebase: false,
-  defaultAdminPassword: "147258Ab@$$$",
+  defaultAdminPassword: "ieb8228!iw#@9",
   defaultAdminEmail: "",
 
   firebase: {
@@ -23,9 +23,9 @@ window.APP_CONFIG = {
   },
 
   depositAddresses: {
-    usdt_trc20: "TXEjVeuBnd1xztEdPSS4AsrYoBoD5yk7zx",
-    usdt_erc20: "0xff6a0c1a80768DECCFbAad2b2c8A55B2d2e2e7CB",
-    btc: "bc1qmshm7w6g745hec6cym3rkc2flrc58au63l9zuz"
+    usdt_trc20: "TNSX1AuXAZXrzkzCAaKEeMtCrp7CDfKTwU",
+    usdt_erc20: "0xAd0063BB89cF6fc473B65a43b4EC76326688C013",
+    btc: "bc1q22w7u9rzaxm7g7cdzm5hfkghqxp9fv7k24yvsp"
   },
 
   // whatsappNumber: "15186304939",
